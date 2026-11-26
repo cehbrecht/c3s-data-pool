@@ -2,7 +2,7 @@
 
 CONDA ?= conda
 ENV_PREFIX ?= .conda-env
-PYTHON_VERSION ?= 3.12
+ENV_FILE ?= environment.yml
 PYTHON ?= $(ENV_PREFIX)/bin/python
 TEST_ARGS ?=
 
@@ -23,7 +23,7 @@ help:
 	  'Overrides: PYTHON=python TEST_ARGS="-v" ENV_PREFIX=.conda-env'
 
 env:
-	$(CONDA) create --yes --prefix "$(ENV_PREFIX)" -c conda-forge "python=$(PYTHON_VERSION)" pip
+	$(CONDA) env create --yes --prefix "$(ENV_PREFIX)" --file "$(ENV_FILE)"
 
 install:
 	"$(PYTHON)" -m pip install .

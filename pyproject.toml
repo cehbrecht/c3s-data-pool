@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "c3s-data-pool"
 version = "0.1.0"
-description = "Build and verify local hardlink data pools from CSV catalogs"
+description = "Build and verify local data pools from CSV catalogs"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}

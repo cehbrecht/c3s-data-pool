@@ -21,6 +21,7 @@ class Stats:
     conflicts: int = 0
     invalid: int = 0
     hardlink_failures: int = 0
+    copy_failures: int = 0
     errors: int = 0
 
     @property
@@ -32,6 +33,7 @@ class Stats:
                 self.conflicts,
                 self.invalid,
                 self.hardlink_failures,
+                self.copy_failures,
                 self.errors,
             )
         )
