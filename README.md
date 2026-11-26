@@ -49,11 +49,11 @@ Run the CLI directly. Without activating Conda, use
 `.conda-env/bin/c3s-data-pool` instead of `c3s-data-pool` below.
 
 ```sh
-# Inspect first: dry-run is the default; only the local catalog cache is written.
+# Inspect first: dry-run writes only the local catalog cache and log.
 c3s-data-pool build --config config/dkrz.toml
 
 # Faster first pass: check every source file's existence, type and size only.
-c3s-data-pool build --config config/rook.toml --quick
+c3s-data-pool build --config config/rook.toml --quick --log-file logs/cmip6-quick.log
 
 # Review the displayed roots and answer yes to create hardlinks.
 c3s-data-pool build --config config/dkrz.toml --apply
@@ -64,18 +64,22 @@ c3s-data-pool verify --config config/dkrz.toml
 
 Add `--collection c3s-cmip6` or `--collection c3s-cmip6-decadal` to select a
 collection. Apply requires `y` or `yes`; Enter or unavailable stdin cancels.
-Dry-run never creates data pool directories or hardlinks. Its catalog cache must
-be writable; keep it on the VM's local disk rather than read-only Lustre.
+Dry-run never creates data pool directories or hardlinks. Keep its writable cache
+and log on the VM's local disk rather than read-only Lustre.
 
 `--quick` makes one stat call per source file and follows symlinks. It skips
 destination, hardlink identity and filesystem compatibility checks; a successful
 quick scan does not establish that a pool can be built. It cannot be combined
 with `--apply`. Run a full build/verify before retiring the original pool.
 
-A heartbeat every 15 seconds shows completed files, elapsed time, the current
-stage/file and how long that operation has been active, even during slow
-filesystem calls. It makes no extra filesystem requests. Use
-`--heartbeat-seconds 5` for more frequent updates.
+The console shows an updating progress bar, then a short final status and log
+path. Detailed messages go to `~/.local/state/c3s-data-pool/logs` (respecting
+`XDG_STATE_HOME`), or the file chosen with `--log-file`. Explicit log files are
+appended to. Redirected/non-interactive runs omit the bar.
+
+The bar keeps animating during slow filesystem calls without extra filesystem
+requests. Heartbeat log entries every 15 seconds include the current file and
+elapsed time; use `--heartbeat-seconds 5` for more frequent log entries.
 
 Builds check source sizes, resolve source symlinks and check existing hardlinks
 by inode and device. Correct links are skipped, so interrupted builds can be
@@ -84,7 +88,7 @@ Directory metadata is reused within a run to reduce filesystem load; every file
 is still checked individually. Keep source and target directory trees stable
 during a run. Apply rechecks destination directories before each hardlink.
 
-Progress and summaries go to stderr with local timestamps and UTC offsets,
+Progress and summaries go to the log with local timestamps and UTC offsets,
 including logical catalog volume in decimal GB/TB and errors. Exact bytes are
 used internally for file-size checks.
 `files` counts processed catalog entries, including duplicates and invalid rows.

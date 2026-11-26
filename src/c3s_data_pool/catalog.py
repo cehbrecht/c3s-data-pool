@@ -74,13 +74,14 @@ def process_catalog(
     refresh=False,
     quick=False,
     heartbeat_seconds=15,
+    console=None,
 ):
     if quick and (apply or not build):
         raise ValueError("quick mode is only available for read-only source scans")
     stats = Stats()
     dataset_directories = set()
     metadata = MetadataCache()
-    with Heartbeat(name, interval=heartbeat_seconds) as heartbeat:
+    with Heartbeat(name, interval=heartbeat_seconds, console=console) as heartbeat:
         try:
             heartbeat.update("preparing catalog", paths["catalog"])
             location = cache_catalog(paths["catalog"], cache_dir, refresh=refresh)
@@ -155,5 +156,10 @@ def process_catalog(
         ) as exc:
             stats.errors += 1
             LOG.error("%s: catalog failed: %s", name, exc)
+        heartbeat.update(
+            "finished with errors" if stats.failed else "complete",
+            completed=stats.files,
+            total=stats.total_files,
+        )
     stats.report(name, "quick summary" if quick else "summary")
     return stats

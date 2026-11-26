@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
@@ -55,15 +56,29 @@ def dkrz_pool(tmp_path, request, write_config):
 
 
 def cli(config, command, *options):
+    log_file = config.parent / f"run-{uuid4().hex}.log"
     result = subprocess.run(
-        [sys.executable, "-m", "c3s_data_pool", command, "--config", str(config), *options],
+        [
+            sys.executable,
+            "-m",
+            "c3s_data_pool",
+            command,
+            "--config",
+            str(config),
+            "--log-file",
+            str(log_file),
+            *options,
+        ],
         input="yes\n" if "--apply" in options else "",
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    return result.stderr
+    assert "INFO" not in result.stderr
+    assert "Log:" in result.stderr
+    assert "\r" not in result.stderr
+    return log_file.read_text()
 
 
 def test_both_collections_survive_source_removal(dkrz_pool):

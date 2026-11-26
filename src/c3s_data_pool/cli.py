@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .catalog import process_catalog
 from .config import load_config
+from .output import RunOutput
 from .stats import Stats
 
 LOG = logging.getLogger("c3s-data-pool")
@@ -37,6 +38,11 @@ def main(argv=None):
     for command in ("build", "verify"):
         sub = commands.add_parser(command)
         sub.add_argument("--config", required=True, type=Path)
+        sub.add_argument(
+            "--log-file",
+            type=Path,
+            help="detailed log file (default: ~/.local/state/c3s-data-pool/logs, respecting XDG_STATE_HOME)",
+        )
         sub.add_argument("--collection", action="append", help="select a collection (repeatable)")
         sub.add_argument("--progress-every", type=positive_int, default=10000, metavar="ROWS")
         sub.add_argument(
@@ -72,11 +78,27 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.command == "build" and args.quick and args.apply:
         parser.error("--quick cannot be combined with --apply")
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S %z",
+    try:
+        output = RunOutput(args.log_file, args.command)
+    except OSError as exc:
+        print(f"Cannot open log file: {exc}", file=sys.stderr)
+        return 2
+    mode = (
+        "Verify"
+        if args.command == "verify"
+        else ("Quick scan" if args.quick else ("Apply" if args.apply else "Dry-run"))
     )
+    with output:
+        try:
+            code = _run(args, output.console)
+        except KeyboardInterrupt:
+            LOG.error("interrupted; existing links are retained, rerun to resume")
+            code = 130
+        output.finish(code, mode)
+    return code
+
+
+def _run(args, console):
     build = args.command == "build"
     apply = build and args.apply
     quick = build and args.quick
@@ -88,6 +110,7 @@ def main(argv=None):
     LOG.info(
         "mode=%s", "quick" if quick else ("apply" if apply else ("dry-run" if build else "verify"))
     )
+    LOG.info("config=%s", args.config.absolute())
     if quick:
         LOG.info(
             "quick scan checks all source files for existence, regular-file type and size; "
@@ -106,6 +129,13 @@ def main(argv=None):
     total = Stats()
     try:
         for name, paths in collections:
+            LOG.info(
+                "%s: catalog=%s source=%s target=%s",
+                name,
+                paths["catalog"],
+                paths.get("source", "-"),
+                paths["target"],
+            )
             stats = process_catalog(
                 name,
                 paths,
@@ -116,6 +146,7 @@ def main(argv=None):
                 refresh=args.refresh_catalog,
                 quick=quick,
                 heartbeat_seconds=args.heartbeat_seconds,
+                console=console,
             )
             failed |= stats.failed
             for key, value in vars(stats).items():

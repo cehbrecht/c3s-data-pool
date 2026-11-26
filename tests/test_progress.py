@@ -50,3 +50,20 @@ def test_heartbeat_stops_when_processing_raises():
         with heartbeat:
             raise RuntimeError("processing failed")
     assert not heartbeat.thread.is_alive()
+
+
+def test_console_updates_independently_of_log_heartbeat():
+    rendered = Event()
+
+    class Console:
+        def render(self, name, state, elapsed):
+            if state[0] == "checking file":
+                rendered.set()
+
+        def finish(self):
+            pass
+
+    with Heartbeat("test", interval=60, console=Console()) as heartbeat:
+        heartbeat.update("checking file", "file.nc", completed=0, total=1)
+        assert rendered.wait(timeout=2), "the bar did not update while the operation was pending"
+    assert not heartbeat.thread.is_alive()

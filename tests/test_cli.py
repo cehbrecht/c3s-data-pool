@@ -4,6 +4,9 @@ import gzip
 import io
 import logging
 import os
+import select
+import subprocess
+import sys
 from http.client import IncompleteRead
 from pathlib import Path
 from unittest.mock import patch
@@ -535,3 +538,73 @@ def test_heartbeat_interval_must_be_positive(pool, interval):
     with pytest.raises(SystemExit) as error:
         run(pool, "--heartbeat-seconds", interval)
     assert error.value.code == 2
+
+
+def test_failure_details_are_logged_without_console_spam(pool, capsys):
+    (pool[1] / "model/v20260101/file.nc").unlink()
+    log_file = pool[0].parent / "failure.log"
+    assert run(pool, "--log-file", str(log_file)) == 1
+    console = capsys.readouterr().err
+    assert "exit 1" in console
+    assert str(log_file) in console
+    assert "missing source" not in console
+    assert "ERROR missing source" in log_file.read_text()
+
+
+def test_unwritable_log_location_stops_before_processing(pool, capsys):
+    parent = pool[0].parent / "not-a-directory"
+    parent.write_text("unchanged")
+    assert run(pool, "--log-file", str(parent / "run.log")) == 2
+    assert "Cannot open log file" in capsys.readouterr().err
+    assert parent.read_text() == "unchanged"
+    assert not pool[2].exists()
+
+
+def test_cli_progress_bar_on_real_terminal(pool):
+    pty = pytest.importorskip("pty")
+    master, slave = pty.openpty()
+    log_file = pool[0].parent / "terminal.log"
+    try:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "c3s_data_pool",
+                "build",
+                "--config",
+                str(pool[0]),
+                "--quick",
+                "--log-file",
+                str(log_file),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=slave,
+        )
+        stdout, _ = process.communicate(timeout=10)
+        chunks = []
+        # Keep the parent's slave open until the buffered output is drained;
+        # macOS can discard unread terminal output when the last slave closes.
+        while select.select([master], [], [], 0)[0]:
+            try:
+                chunk = os.read(master, 4096)
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+        console = b"".join(chunks).decode()
+        assert process.returncode == 0
+        assert stdout == b""
+        assert "\r" in console
+        assert "[####################]" in console
+        assert "100.0% 1/1" in console
+        assert "Quick scan completed" in console
+        assert "INFO" not in console
+        assert "checked=1" in log_file.read_text()
+    finally:
+        os.close(master)
+        if slave is not None:
+            os.close(slave)
