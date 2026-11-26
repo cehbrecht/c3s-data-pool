@@ -2,19 +2,20 @@
 
 import csv
 import gzip
+import re
 import subprocess
 import sys
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
-import yaml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COLLECTIONS = ("c3s-cmip6", "c3s-cmip6-decadal")
 
 
 @pytest.fixture(params=[".csv", ".csv.gz"])
-def dkrz_pool(tmp_path, request):
+def dkrz_pool(tmp_path, request, write_config):
     source = tmp_path / "work/ik1017/CMIP6/data/CMIP6"
     targets = {
         "c3s-cmip6": tmp_path / "work/ik1017/C3SCMIP6/data/c3s-cmip6",
@@ -49,32 +50,53 @@ def dkrz_pool(tmp_path, request):
             else:
                 path.write_bytes(payload)
             originals.append(path)
-    config = tmp_path / "dkrz.yml"
-    config.write_text(yaml.safe_dump({"collections": collections}))
+    config = tmp_path / "dkrz.toml"
+    write_config(config, {"collections": collections})
     return config, source, targets, files, originals
 
 
 def cli(config, command, *options):
+    log_file = config.parent / f"run-{uuid4().hex}.log"
     result = subprocess.run(
-        [sys.executable, "-m", "c3s_data_pool", command, "--config", str(config), *options],
+        [
+            sys.executable,
+            "-m",
+            "c3s_data_pool",
+            command,
+            "--config",
+            str(config),
+            "--log-file",
+            str(log_file),
+            *options,
+        ],
         input="yes\n" if "--apply" in options else "",
         capture_output=True,
         text=True,
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    return result.stderr
+    assert "INFO" not in result.stderr
+    assert "Log:" in result.stderr
+    assert "\r" not in result.stderr
+    return log_file.read_text()
 
 
 def test_both_collections_survive_source_removal(dkrz_pool):
     config, source, targets, files, originals = dkrz_pool
 
     dry_run = cli(config, "build")
-    assert "rows=4 logical_bytes=120 created=0 planned=4" in dry_run
+    assert re.search(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4} INFO mode=dry-run", dry_run)
+    assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=0 planned=4" in dry_run
+    assert all(not target.exists() for target in targets.values())
+
+    quick = cli(config, "build", "--quick")
+    assert "all collections quick summary: files=4/4 (100.0%)" in quick
+    assert "checked=4" in quick
+    assert "planned=0" in quick
     assert all(not target.exists() for target in targets.values())
 
     build = cli(config, "build", "--apply")
-    assert "rows=4 logical_bytes=120 created=4 planned=0" in build
+    assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=4 planned=0" in build
     identities = {}
     for name, rows in files.items():
         for row in rows:
@@ -88,7 +110,7 @@ def test_both_collections_survive_source_removal(dkrz_pool):
         }
 
     repeated = cli(config, "build", "--apply")
-    assert "rows=4 logical_bytes=120 created=0 planned=0 existing=4" in repeated
+    assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=0 planned=0 existing=4" in repeated
     assert all(
         (path.stat().st_dev, path.stat().st_ino) == identity
         for path, identity in identities.items()
@@ -98,7 +120,10 @@ def test_both_collections_survive_source_removal(dkrz_pool):
         path.unlink()
     assert not list(source.rglob("*.nc"))
     verified = cli(config, "verify")
-    assert "rows=4 logical_bytes=120 created=0 planned=0 existing=0 verified=4" in verified
+    assert (
+        "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=0 planned=0 existing=0 verified=4"
+        in verified
+    )
     for name, rows in files.items():
         for row in rows:
             assert (targets[name] / row["path"]).read_bytes() == (

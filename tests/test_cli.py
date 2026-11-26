@@ -4,37 +4,39 @@ import gzip
 import io
 import logging
 import os
+import select
+import subprocess
+import sys
 from http.client import IncompleteRead
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 import pytest
-import yaml
 
-from c3s_data_pool import catalog as catalog_module
+from c3s_data_pool import cache as cache_module
 from c3s_data_pool.cli import main
+from c3s_data_pool.config import tomllib
 
 
 @pytest.fixture
-def pool(tmp_path):
+def pool(tmp_path, write_config):
     source = tmp_path / "source"
     source.mkdir()
     target = tmp_path / "not-created" / "pool"
     catalog = tmp_path / "files.csv.gz"
-    config = tmp_path / "config.yml"
-    config.write_text(
-        yaml.safe_dump(
-            {
-                "collections": {
-                    "test": {
-                        "source": "source",
-                        "target": "not-created/pool",
-                        "catalog": "files.csv.gz",
-                    }
+    config = tmp_path / "config.toml"
+    write_config(
+        config,
+        {
+            "collections": {
+                "test": {
+                    "source": "source",
+                    "target": "not-created/pool",
+                    "catalog": "files.csv.gz",
                 }
             }
-        )
+        },
     )
 
     def write(rows=None):
@@ -69,7 +71,7 @@ def test_dry_run_never_writes(pool, monkeypatch, caplog, args):
         assert run(pool, *args) == 0
     assert not pool[2].parent.exists()
     assert "planned=1" in caplog.text
-    assert "logical_bytes=4" in caplog.text
+    assert "volume=0.00 GB" in caplog.text
 
 
 def test_hardlink_and_repeated_build(pool, caplog):
@@ -84,13 +86,13 @@ def test_hardlink_and_repeated_build(pool, caplog):
     assert "existing=1" in caplog.text
 
 
-def test_verify_without_source(pool):
+def test_verify_without_source(pool, write_config):
     assert run(pool, "--apply") == 0
     (pool[1] / "model/v20260101/file.nc").unlink()
     # Verification also accepts a configuration without any source key.
-    config = yaml.safe_load(pool[0].read_text())
+    config = tomllib.loads(pool[0].read_text())
     del config["collections"]["test"]["source"]
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool, command="verify") == 0
 
 
@@ -217,14 +219,14 @@ def test_truncated_gzip(pool):
     assert run(pool) == 1
 
 
-def test_collection_selection_and_progress(pool, caplog):
-    config = yaml.safe_load(pool[0].read_text())
+def test_collection_selection_and_progress(pool, caplog, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["unused"] = {
         "catalog": "missing.csv.gz",
         "target": "other",
         "source": "source",
     }
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     with caplog.at_level(logging.INFO):
         assert run(pool, "--collection", "test", "--progress-every", "1") == 0
     assert "test progress:" in caplog.text
@@ -232,10 +234,10 @@ def test_collection_selection_and_progress(pool, caplog):
     assert run(pool) == 1
 
 
-def test_same_roots_rejected(pool):
-    config = yaml.safe_load(pool[0].read_text())
+def test_same_roots_rejected(pool, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["target"] = "source"
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool, "--apply") == 2
 
 
@@ -286,7 +288,7 @@ def test_readonly_directory_dry_run(pool):
 
 
 def test_invalid_config(pool):
-    pool[0].write_text("collections: []\n")
+    pool[0].write_text("collections = []\n")
     assert run(pool) == 2
 
 
@@ -298,14 +300,17 @@ def test_zero_size_file(pool):
 
 
 @pytest.fixture
-def remote_catalog(pool, monkeypatch):
+def remote_catalog(pool, monkeypatch, write_config):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(pool[0].parent / "cache-root"))
     url = "https://example.test/catalog.csv.gz?version=pinned"
-    config = yaml.safe_load(pool[0].read_text())
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["catalog"] = url
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     responses = []
 
     class StreamingResponse(io.BytesIO):
+        headers = {}
+
         def read(self, size=-1):
             assert size >= 0, "remote catalog must not be read in one unbounded request"
             return super().read(size)
@@ -317,20 +322,27 @@ def remote_catalog(pool, monkeypatch):
         responses.append(response)
         return response
 
-    monkeypatch.setattr(catalog_module, "urlopen", fetch)
+    monkeypatch.setattr(cache_module, "urlopen", fetch)
     return responses
 
 
-def test_remote_dry_run_never_writes(pool, remote_catalog, monkeypatch):
-    def forbidden(*args, **kwargs):
-        pytest.fail("remote dry-run attempted a write")
+def test_remote_dry_run_writes_only_cache(pool, remote_catalog, monkeypatch):
+    original_mkdir = Path.mkdir
 
-    monkeypatch.setattr(Path, "mkdir", forbidden)
+    def cache_mkdir(path, *args, **kwargs):
+        cache_root = pool[0].parent / "cache-root"
+        assert path == cache_root or cache_root in path.parents
+        return original_mkdir(path, *args, **kwargs)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("remote dry-run attempted a hardlink")
+
+    monkeypatch.setattr(Path, "mkdir", cache_mkdir)
     monkeypatch.setattr(os, "link", forbidden)
     assert run(pool) == 0
     assert not pool[2].parent.exists()
     assert len(remote_catalog) == 1
-    assert remote_catalog[0].closed
+    assert all(response.closed for response in remote_catalog)
 
 
 def test_remote_build_repeat_and_verify_without_source(pool, remote_catalog):
@@ -340,8 +352,20 @@ def test_remote_build_repeat_and_verify_without_source(pool, remote_catalog):
     assert source.samefile(pool[2] / "model/v20260101/file.nc")
     source.unlink()
     assert run(pool, command="verify") == 0
-    assert len(remote_catalog) == 3
+    assert len(remote_catalog) == 1
     assert all(response.closed for response in remote_catalog)
+
+
+def test_cli_cache_directory_and_refresh(pool, remote_catalog):
+    chosen = pool[0].parent / "chosen-cache"
+    assert run(pool, "--cache-dir", str(chosen)) == 0
+    assert len(list(chosen.glob("*.csv.gz"))) == 1
+    assert run(pool, "--cache-dir", str(chosen)) == 0
+    assert len(remote_catalog) == 1
+    assert run(pool, "--cache-dir", str(chosen), "--refresh-catalog") == 0
+    assert len(remote_catalog) == 2
+    assert not (pool[0].parent / "cache-root").exists()
+    assert not pool[2].exists()
 
 
 @pytest.mark.parametrize(
@@ -357,7 +381,7 @@ def test_remote_failure_returns_nonzero(pool, remote_catalog, monkeypatch, caplo
     def fail(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr(catalog_module, "urlopen", fail)
+    monkeypatch.setattr(cache_module, "urlopen", fail)
     assert run(pool) == 1
     assert "catalog failed" in caplog.text
     assert not pool[2].exists()
@@ -386,17 +410,17 @@ def test_remote_invalid_catalog_closes_response(pool, remote_catalog, contents):
         "https://example.test/catalog.csv",
     ],
 )
-def test_invalid_catalog_url(pool, location):
-    config = yaml.safe_load(pool[0].read_text())
+def test_invalid_catalog_url(pool, location, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["catalog"] = location
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool) == 2
 
 
-def test_absolute_local_catalog(pool):
-    config = yaml.safe_load(pool[0].read_text())
+def test_absolute_local_catalog(pool, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["catalog"] = str(pool[3])
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool) == 0
 
 
@@ -439,3 +463,148 @@ def test_readonly_commands_never_prompt(pool, monkeypatch, command):
     monkeypatch.setattr("builtins.input", forbidden)
     expected = 0 if command == "build" else 1
     assert main([command, "--config", str(pool[0])]) == expected
+
+
+def test_quick_scan_never_checks_destination_or_prompts(pool, monkeypatch, caplog):
+    from c3s_data_pool import catalog as catalog_module
+
+    original_resolve = Path.resolve
+
+    def resolve_config_only(path, *args, **kwargs):
+        assert path == pool[0], "quick mode resolved a filesystem root"
+        return original_resolve(path, *args, **kwargs)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("quick mode attempted a full check, write or prompt")
+
+    monkeypatch.setattr(Path, "resolve", resolve_config_only)
+    monkeypatch.setattr(Path, "mkdir", forbidden)
+    monkeypatch.setattr(catalog_module, "process_row", forbidden)
+    monkeypatch.setattr("builtins.input", forbidden)
+    monkeypatch.setattr(os, "link", forbidden)
+    with caplog.at_level(logging.INFO):
+        assert main(["build", "--config", str(pool[0]), "--quick"]) == 0
+    assert "mode=quick" in caplog.text
+    assert "checked=1" in caplog.text
+    assert "planned=0" in caplog.text
+    assert "not checked" in caplog.text
+    assert not pool[2].exists()
+
+
+@pytest.mark.parametrize("problem", ["missing", "size", "directory", "traversal"])
+def test_quick_scan_reports_failures(pool, problem):
+    source = pool[1] / "model/v20260101/file.nc"
+    if problem == "missing":
+        source.unlink()
+    elif problem == "size":
+        source.write_bytes(b"wrong size")
+    elif problem == "directory":
+        source.unlink()
+        source.mkdir()
+    else:
+        pool[4]([("../escape", 4, "test")])
+    assert run(pool, "--quick") == 1
+    assert not pool[2].exists()
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_quick_source_symlinks(pool, broken):
+    source = pool[1] / "model/v20260101/file.nc"
+    source.unlink()
+    real = pool[1] / "real"
+    if not broken:
+        real.write_bytes(b"data")
+    source.symlink_to(real)
+    assert run(pool, "--quick") == (1 if broken else 0)
+
+
+def test_quick_skips_destination_conflicts(pool):
+    destination = pool[2] / "model/v20260101/file.nc"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"independent copy")
+    assert run(pool, "--quick") == 0
+    assert run(pool) == 1
+
+
+def test_quick_cannot_apply(pool):
+    with pytest.raises(SystemExit) as error:
+        run(pool, "--quick", "--apply")
+    assert error.value.code == 2
+    assert not pool[2].exists()
+
+
+@pytest.mark.parametrize("interval", ["0", "-1"])
+def test_heartbeat_interval_must_be_positive(pool, interval):
+    with pytest.raises(SystemExit) as error:
+        run(pool, "--heartbeat-seconds", interval)
+    assert error.value.code == 2
+
+
+def test_failure_details_are_logged_without_console_spam(pool, capsys):
+    (pool[1] / "model/v20260101/file.nc").unlink()
+    log_file = pool[0].parent / "failure.log"
+    assert run(pool, "--log-file", str(log_file)) == 1
+    console = capsys.readouterr().err
+    assert "exit 1" in console
+    assert str(log_file) in console
+    assert "missing source" not in console
+    assert "ERROR missing source" in log_file.read_text()
+
+
+def test_unwritable_log_location_stops_before_processing(pool, capsys):
+    parent = pool[0].parent / "not-a-directory"
+    parent.write_text("unchanged")
+    assert run(pool, "--log-file", str(parent / "run.log")) == 2
+    assert "Cannot open log file" in capsys.readouterr().err
+    assert parent.read_text() == "unchanged"
+    assert not pool[2].exists()
+
+
+def test_cli_progress_bar_on_real_terminal(pool):
+    pty = pytest.importorskip("pty")
+    master, slave = pty.openpty()
+    log_file = pool[0].parent / "terminal.log"
+    try:
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "c3s_data_pool",
+                "build",
+                "--config",
+                str(pool[0]),
+                "--quick",
+                "--log-file",
+                str(log_file),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=slave,
+        )
+        stdout, _ = process.communicate(timeout=10)
+        chunks = []
+        # Keep the parent's slave open until the buffered output is drained;
+        # macOS can discard unread terminal output when the last slave closes.
+        while select.select([master], [], [], 0)[0]:
+            try:
+                chunk = os.read(master, 4096)
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                break
+            if not chunk:
+                break
+            chunks.append(chunk)
+        console = b"".join(chunks).decode()
+        assert process.returncode == 0
+        assert stdout == b""
+        assert "\r" in console
+        assert "[####################]" in console
+        assert "100.0% 1/1" in console
+        assert "Quick scan completed" in console
+        assert "INFO" not in console
+        assert "checked=1" in log_file.read_text()
+    finally:
+        os.close(master)
+        if slave is not None:
+            os.close(slave)

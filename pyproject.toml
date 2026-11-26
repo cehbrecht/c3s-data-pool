@@ -9,7 +9,7 @@ description = "Build and verify local hardlink data pools from CSV catalogs"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
-dependencies = ["PyYAML>=6"]
+dependencies = ["tomli>=2; python_version < '3.11'"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

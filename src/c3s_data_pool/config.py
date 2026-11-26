@@ -3,7 +3,10 @@
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import yaml
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 
 def catalog_location(value, directory):
@@ -21,10 +24,12 @@ def catalog_location(value, directory):
     return path.absolute()
 
 
-def load_config(filename, selected, build):
+def load_config(filename, selected, build, *, resolve_roots=True):
     config_path = Path(filename).resolve()
-    with config_path.open(encoding="utf-8") as stream:
-        config = yaml.safe_load(stream)
+    if config_path.suffix != ".toml":
+        raise ValueError("config must be a .toml file")
+    with config_path.open("rb") as stream:
+        config = tomllib.load(stream)
     collections = config.get("collections") if isinstance(config, dict) else None
     if not isinstance(collections, dict) or not collections:
         raise ValueError("configuration requires a non-empty collections mapping")
@@ -46,7 +51,8 @@ def load_config(filename, selected, build):
             if key == "catalog":
                 paths[key] = catalog_location(value, config_path.parent)
             else:
-                paths[key] = (config_path.parent / Path(value).expanduser()).resolve()
+                path = config_path.parent / Path(value).expanduser()
+                paths[key] = path.resolve() if resolve_roots else path.absolute()
         if build and paths["source"] == paths["target"]:
             raise ValueError(f"{name}: source and target must be different directories")
         result.append((name, paths))
