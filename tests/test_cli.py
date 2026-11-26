@@ -131,7 +131,10 @@ def test_conflicts_never_overwritten(pool, kind):
     ["../escape", "/absolute", "a/../../escape", "a/./b", "a//b", "a/", "", "a\\b", "a\x00b"],
 )
 def test_invalid_paths(pool, path):
-    pool[4]([(path, 0, "other")])
+    # Write these deliberately invalid fields literally: Python 3.10's CSV
+    # writer rejects NUL bytes before the catalog reader can inspect them.
+    with gzip.open(pool[3], "wt", newline="") as stream:
+        stream.write(f"path,size,mip_era\n{path},0,other\n")
     assert run(pool, "--apply") == 1
     assert not pool[2].exists()
 
