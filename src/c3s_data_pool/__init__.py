@@ -1,1 +1,1 @@
-"""Local catalog-driven hardlink data pools."""
+"""Local catalog-driven data pools."""

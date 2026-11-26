@@ -74,6 +74,7 @@ def process_catalog(
     refresh=False,
     heartbeat_seconds=15,
     console=None,
+    method="hardlink",
 ):
     dry_run = build and not apply
     stats = Stats()
@@ -129,6 +130,8 @@ def process_catalog(
                                     build=build,
                                     apply=apply,
                                     metadata=metadata,
+                                    method=method,
+                                    heartbeat=heartbeat,
                                 )
                         except (OSError, RuntimeError) as exc:
                             stats.errors += 1
@@ -138,7 +141,7 @@ def process_catalog(
                     )
                     if apply and stats.failed:
                         LOG.error(
-                            "%s: apply stopped at row %d; successful links are retained",
+                            "%s: apply stopped at row %d; successful files are retained",
                             name,
                             stats.files,
                         )

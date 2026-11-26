@@ -1,9 +1,10 @@
-"""Inspect destination files and safely create or verify hardlinks."""
+"""Inspect destination files and safely create hardlinks or copies."""
 
 import logging
 import os
 import stat
 
+from .copying import copy_file
 from .metadata import MetadataCache
 from .source import check_source
 
@@ -53,7 +54,11 @@ def prepare_destination(root, relative):
             raise ValueError(f"destination parent is not a real directory: {current}")
 
 
-def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
+def process_row(
+    paths, relative, size, stats, *, build, apply, metadata=None, method="hardlink", heartbeat=None
+):
+    if method not in {"hardlink", "copy"}:
+        raise ValueError(f"unsupported retention method: {method}")
     if metadata is None:
         metadata = MetadataCache()
     if build and not apply:
@@ -101,7 +106,7 @@ def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
         return
     if source == destination:
         stats.conflicts += 1
-        LOG.error("source resolves to destination; no independent link: %s", source)
+        LOG.error("source resolves to destination; no independent retained path: %s", source)
         return
     try:
         try:
@@ -109,6 +114,22 @@ def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
         except (ValueError, NotADirectoryError) as exc:
             stats.conflicts += 1
             LOG.error("conflict %s: %s", destination, exc)
+            return
+        if method == "copy":
+            if heartbeat is not None:
+                heartbeat.update(
+                    "copying file", source, completed=stats.files - 1, total=stats.total_files
+                )
+            try:
+                created = copy_file(source, destination, size, source_info)
+            except FileExistsError as exc:
+                stats.conflicts += 1
+                LOG.error("conflict %s: %s", destination, exc)
+                return
+            if created:
+                stats.created += 1
+            else:
+                stats.existing += 1
             return
         try:
             os.link(source, destination, follow_symlinks=False)
@@ -138,5 +159,8 @@ def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
             raise ValueError("new link failed inode/device/size validation; inspect destination")
         stats.created += 1
     except (OSError, ValueError) as exc:
-        stats.hardlink_failures += 1
-        LOG.error("hardlink failed %s -> %s: %s", source, destination, exc)
+        if method == "copy":
+            stats.copy_failures += 1
+        else:
+            stats.hardlink_failures += 1
+        LOG.error("%s failed %s -> %s: %s", method, source, destination, exc)

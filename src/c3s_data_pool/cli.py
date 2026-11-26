@@ -1,4 +1,4 @@
-"""Build and verify local hardlink data pools from CSV catalogs."""
+"""Build and verify local data pools from CSV catalogs."""
 
 import argparse
 import logging
@@ -20,9 +20,10 @@ def positive_int(value):
     return number
 
 
-def confirm_apply(collections):
+def confirm_apply(collections, method="hardlink"):
     """Require explicit confirmation for the selected source/target pairs."""
-    print("Apply will create directories and hardlinks for:", file=sys.stderr)
+    action = "hardlinks" if method == "hardlink" else "independent file copies"
+    print(f"Apply will create directories and {action} for:", file=sys.stderr)
     for name, paths in collections:
         print(f"  {name}: {paths['source']} -> {paths['target']}", file=sys.stderr)
     print("Continue? [y/N]: ", end="", file=sys.stderr, flush=True)
@@ -63,11 +64,17 @@ def main(argv=None):
             help="download a fresh copy of remote catalogs",
         )
         if command == "build":
+            sub.add_argument(
+                "--method",
+                choices=("hardlink", "copy"),
+                default="hardlink",
+                help="retention method (default: hardlink); copy duplicates file contents",
+            )
             mode = sub.add_mutually_exclusive_group()
             mode.add_argument(
                 "--apply",
                 action="store_true",
-                help="create directories and hardlinks after confirmation",
+                help="create directories and data files using the selected method after confirmation",
             )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
@@ -81,7 +88,7 @@ def main(argv=None):
         try:
             code = _run(args, output.console)
         except KeyboardInterrupt:
-            LOG.error("interrupted; existing links are retained, rerun to resume")
+            LOG.error("interrupted; completed files are retained, rerun to resume")
             code = 130
         output.finish(code, mode)
     return code
@@ -91,6 +98,7 @@ def _run(args, console):
     build = args.command == "build"
     apply = build and args.apply
     dry_run = build and not apply
+    method = args.method if build else "hardlink"
     try:
         collections = load_config(args.config, args.collection, build, resolve_roots=not dry_run)
     except (OSError, ValueError, RuntimeError) as exc:
@@ -98,6 +106,13 @@ def _run(args, console):
         return 2
     LOG.info("mode=%s", "apply" if apply else ("dry-run" if build else "verify"))
     LOG.info("config=%s", args.config.absolute())
+    if build:
+        LOG.info("method=%s", method)
+        if method == "copy":
+            LOG.info(
+                "copy mode duplicates file contents; existing regular files are accepted "
+                "by catalog size, without checksum validation"
+            )
     if dry_run:
         LOG.info(
             "dry-run checks all source files for existence, regular-file type and size; "
@@ -105,7 +120,7 @@ def _run(args, console):
         )
     if apply:
         try:
-            confirmed = confirm_apply(collections)
+            confirmed = confirm_apply(collections, method)
         except KeyboardInterrupt:
             LOG.error("interrupted before applying; no changes made")
             return 130
@@ -133,6 +148,7 @@ def _run(args, console):
                 refresh=args.refresh_catalog,
                 heartbeat_seconds=args.heartbeat_seconds,
                 console=console,
+                method=method,
             )
             failed |= stats.failed
             for key, value in vars(stats).items():
@@ -141,7 +157,7 @@ def _run(args, console):
                 LOG.error("apply stopped; remaining collections were not processed")
                 break
     except KeyboardInterrupt:
-        LOG.error("interrupted; existing links are retained, rerun to resume")
+        LOG.error("interrupted; completed files are retained, rerun to resume")
         return 130
     total.report("all collections", "summary")
     return 1 if failed else 0

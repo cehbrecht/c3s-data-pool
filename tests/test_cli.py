@@ -527,7 +527,8 @@ def test_dry_run_skips_destination_conflicts(pool):
 
 
 @pytest.mark.parametrize("failure", ["missing", "size", "invalid", "conflict", "link"])
-def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, failure):
+@pytest.mark.parametrize("method", ["hardlink", "copy"])
+def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, failure, method):
     for name in ("first.nc", "bad.nc", "later.nc"):
         (pool[1] / name).write_bytes(b"data")
     bad_path = "../escape.nc" if failure == "invalid" else "bad.nc"
@@ -538,7 +539,7 @@ def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, 
         (pool[1] / "bad.nc").write_bytes(b"wrong size")
     elif failure == "conflict":
         pool[2].mkdir(parents=True)
-        (pool[2] / "bad.nc").write_bytes(b"copy")
+        (pool[2] / "bad.nc").write_bytes(b"wrong-size copy")
     original_link = os.link
     fail_link = failure == "link"
 
@@ -549,8 +550,8 @@ def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, 
 
     monkeypatch.setattr(os, "link", link)
     with caplog.at_level(logging.INFO):
-        assert run(pool, "--apply") == 1
-    assert (pool[2] / "first.nc").samefile(pool[1] / "first.nc")
+        assert run(pool, "--apply", "--method", method) == 1
+    assert (pool[2] / "first.nc").samefile(pool[1] / "first.nc") == (method == "hardlink")
     assert not (pool[2] / "later.nc").exists()
     assert "apply stopped at row 2" in caplog.text
     assert "files=2/3 (66.7%)" in caplog.text
@@ -564,7 +565,7 @@ def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, 
     pool[4]([(name, 4, "test") for name in ("first.nc", "bad.nc", "later.nc")])
     caplog.clear()
     with caplog.at_level(logging.INFO):
-        assert run(pool, "--apply") == 0
+        assert run(pool, "--apply", "--method", method) == 0
     assert "created=2 existing=1" in caplog.text
     assert run(pool, command="verify") == 0
 

@@ -81,7 +81,8 @@ def cli(config, command, *options):
     return log_file.read_text()
 
 
-def test_both_collections_survive_source_removal(dkrz_pool):
+@pytest.mark.parametrize("method", ["hardlink", "copy"])
+def test_both_collections_survive_source_removal(dkrz_pool, method):
     config, source, targets, files, originals = dkrz_pool
 
     dry_run = cli(config, "build")
@@ -92,13 +93,13 @@ def test_both_collections_survive_source_removal(dkrz_pool):
     )
     assert all(not target.exists() for target in targets.values())
 
-    build = cli(config, "build", "--apply")
+    build = cli(config, "build", "--method", method, "--apply")
     assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=4" in build
     identities = {}
     for name, rows in files.items():
         for row in rows:
             target = targets[name] / row["path"]
-            assert target.samefile(source / row["path"])
+            assert target.samefile(source / row["path"]) == (method == "hardlink")
             assert not target.is_symlink()
             assert target.stat().st_size == int(row["size"])
             identities[target] = (target.stat().st_dev, target.stat().st_ino)
@@ -106,7 +107,7 @@ def test_both_collections_survive_source_removal(dkrz_pool):
             row["path"] for row in rows
         }
 
-    repeated = cli(config, "build", "--apply")
+    repeated = cli(config, "build", "--method", method, "--apply")
     assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=0 existing=4" in repeated
     assert all(
         (path.stat().st_dev, path.stat().st_ino) == identity
