@@ -20,6 +20,32 @@ For development, install `python -m pip install -e '.[test]'` and run `pytest`
 inside the Conda environment.
 GitHub Actions runs synthetic-file tests; no climate data or Lustre is required.
 
+## Common development tasks
+
+The Makefile uses `.conda-env/bin/python` by default, so activation is optional:
+
+```sh
+make help                # Show available tasks (also the default for make)
+make env                 # Create the Conda environment
+make install             # Install the package
+make develop             # Editable install with test dependencies
+make test                # All tests
+make test-integration    # Dummy CMIP6 and decadal pool tests
+make build               # Package wheel in dist/
+make dry-run             # Inspect pools configured in config/dkrz.yml
+make apply               # Create directories and hardlinks
+make verify              # Verify destination pools
+```
+
+Use `make test TEST_ARGS="-v"` for verbose tests, or `make test PYTHON=python`
+to use an already activated environment. `ENV_PREFIX` and `PYTHON_VERSION` can
+be overridden when creating an environment. Pool tasks accept `CONFIG` and
+additional CLI arguments, for example:
+
+```sh
+make dry-run CONFIG=config/dkrz.yml ARGS="--collection c3s-cmip6"
+```
+
 ## Catalogs and configuration
 
 Configure a direct HTTPS `.csv.gz` URL from the
