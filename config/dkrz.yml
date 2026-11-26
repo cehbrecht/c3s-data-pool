@@ -1,0 +1,10 @@
+collections:
+  c3s-cmip6:
+    catalog: c3s-cmip6_v20260203.csv.gz
+    source: /work/ik1017/CMIP6/data/CMIP6
+    target: /work/ik1017/C3SCMIP6/data/c3s-cmip6
+
+  c3s-cmip6-decadal:
+    catalog: c3s-cmip6-decadal_v20231102.csv.gz
+    source: /work/ik1017/CMIP6/data/CMIP6
+    target: /work/ik1017/C3SCMIP6_DECADAL/data/c3s-cmip6-decadal

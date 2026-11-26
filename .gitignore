@@ -153,6 +153,8 @@ activemq-data/
 .env
 .envrc
 .venv
+.conda-env/
+.conda-envs/
 env/
 venv/
 ENV/
