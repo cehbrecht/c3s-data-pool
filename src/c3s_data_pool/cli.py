@@ -50,7 +50,11 @@ def main(argv=None):
             )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S %z",
+    )
     build = args.command == "build"
     apply = build and args.apply
     try:

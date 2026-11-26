@@ -69,7 +69,7 @@ def test_dry_run_never_writes(pool, monkeypatch, caplog, args):
         assert run(pool, *args) == 0
     assert not pool[2].parent.exists()
     assert "planned=1" in caplog.text
-    assert "logical_bytes=4" in caplog.text
+    assert "volume=0.00 GB" in caplog.text
 
 
 def test_hardlink_and_repeated_build(pool, caplog):

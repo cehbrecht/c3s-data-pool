@@ -57,7 +57,9 @@ Builds check source sizes, resolve source symlinks and check existing hardlinks
 by inode and device. Correct links are skipped, so interrupted builds can be
 rerun. Existing data files are never overwritten, deleted or copied.
 
-Progress and summaries go to stderr, including logical catalog volume and errors.
+Progress and summaries go to stderr with local timestamps and UTC offsets,
+including logical catalog volume in decimal GB/TB and errors. Exact bytes are
+used internally for file-size checks.
 Exit `0` means success; non-zero means cancellation, an error or an incomplete
 pool. A successful dry-run describes a plan; use verify to check a built pool.
 

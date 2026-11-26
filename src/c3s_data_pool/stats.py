@@ -35,5 +35,18 @@ class Stats:
         )
 
     def report(self, name, label):
-        counts = " ".join(f"{key}={value}" for key, value in vars(self).items())
-        LOG.info("%s %s: %s logical_TiB=%.6f", name, label, counts, self.logical_bytes / 1024**4)
+        unit, divisor = ("TB", 10**12) if self.logical_bytes >= 10**12 else ("GB", 10**9)
+        counts = " ".join(
+            f"{key}={value}"
+            for key, value in vars(self).items()
+            if key not in {"rows", "logical_bytes"}
+        )
+        LOG.info(
+            "%s %s: rows=%d volume=%.2f %s %s",
+            name,
+            label,
+            self.rows,
+            self.logical_bytes / divisor,
+            unit,
+            counts,
+        )
