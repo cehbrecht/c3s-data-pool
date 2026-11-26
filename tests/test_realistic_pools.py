@@ -57,6 +57,7 @@ def dkrz_pool(tmp_path, request):
 def cli(config, command, *options):
     result = subprocess.run(
         [sys.executable, "-m", "c3s_data_pool", command, "--config", str(config), *options],
+        input="yes\n" if "--apply" in options else "",
         capture_output=True, text=True, check=False,
     )
     assert result.returncode == 0, result.stderr

@@ -19,7 +19,7 @@ help:
 	  'test-integration  Run tests against the dummy CMIP6 and decadal pools' \
 	  'build             Build a package wheel in dist/' \
 	  'dry-run           Inspect configured pools without creating links' \
-	  'apply             Create directories and hardlinks in configured pools' \
+	  'apply             Confirm, then create directories and hardlinks' \
 	  'verify            Verify configured destination pools' \
 	  '' \
 	  'Overrides: PYTHON=python CONFIG=config/dkrz.yml ARGS="--collection c3s-cmip6"'

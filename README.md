@@ -33,7 +33,7 @@ make test                # All tests
 make test-integration    # Dummy CMIP6 and decadal pool tests
 make build               # Package wheel in dist/
 make dry-run             # Inspect pools configured in config/dkrz.yml
-make apply               # Create directories and hardlinks
+make apply               # Confirm, then create directories and hardlinks
 make verify              # Verify destination pools
 ```
 
@@ -109,13 +109,19 @@ outside its configured root.
 c3s-data-pool build --config config/dkrz.yml
 c3s-data-pool build --config config/dkrz.yml --dry-run
 
-# Explicitly create directories and hardlinks.
+# Confirm the displayed source/target roots, then create directories and hardlinks.
 c3s-data-pool build --config config/dkrz.yml --apply
 
 # Restrict either command to one or more named collections.
 c3s-data-pool build --config config/dkrz.yml --collection c3s-cmip6
 c3s-data-pool verify --config config/dkrz.yml
 ```
+
+Dry-run remains the default. `--apply` (including `make apply`) displays the
+selected collections and source/target roots, then asks `Continue? [y/N]:` before
+reading catalogs or creating anything. Only `y` or `yes` confirms, ignoring case
+and surrounding whitespace. Enter, `no`, any other answer, or unavailable stdin
+cancels with exit code `1`; Ctrl-C exits `130`. Dry-run and verify never prompt.
 
 `--collection` can be repeated. `--progress-every ROWS` changes the default 10,000
 row interval; progress is also emitted after a row when 30 seconds have elapsed.
@@ -146,7 +152,7 @@ Hardlinks share an inode: subsequent in-place writes through any link affect all
 links, so retained data must remain immutable.
 
 Exit codes: `0` means all rows passed (or all missing links were planned in a
-dry-run), `1` means an incomplete pool or catalog/operation failure, `2` means a
+dry-run), `1` means cancellation, an incomplete pool or catalog/operation failure, `2` means a
 CLI/configuration error, and `130` means an interrupted processing run. A successful
 dry-run is a plan, not proof of a complete pool or of write permissions/quota.
 
@@ -159,7 +165,8 @@ dry-run is a plan, not proof of a complete pool or of write permissions/quota.
 2. Run the default dry-run for both collections. Review the summaries and resolve
    missing files, size mismatches, invalid paths and conflicts. Confirm filesystem
    identity and the writable host/account intended for the actual build.
-3. Run `build --apply` on DKRZ with writable Lustre access. Keep the output, for
+3. Run `build --apply` on DKRZ with writable Lustre access, review the displayed
+   source/target roots and answer `yes` to proceed. Keep the output, for
    example with shell stderr redirection to a migration log. Resolve reported
    failures and rerun the same command until it exits `0`.
 4. Run `verify` against the same catalog snapshots and require exit `0` for both

@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from unittest.mock import patch
 
 import pytest
 import yaml
@@ -42,7 +43,9 @@ def pool(tmp_path):
 
 
 def run(pool, *args, command="build"):
-    return main([command, "--config", str(pool[0]), *args])
+    # Operation tests confirm apply; dedicated tests below exercise the prompt.
+    with patch("builtins.input", return_value="yes"):
+        return main([command, "--config", str(pool[0]), *args])
 
 
 @pytest.mark.parametrize("args", [(), ("--dry-run",)])
@@ -346,3 +349,40 @@ def test_absolute_local_catalog(pool):
     config["collections"]["test"]["catalog"] = str(pool[3])
     pool[0].write_text(yaml.safe_dump(config))
     assert run(pool) == 0
+
+
+@pytest.mark.parametrize("answer", ["y", "yes", "YES", " Yes "])
+def test_apply_requires_positive_confirmation(pool, monkeypatch, capsys, answer):
+    monkeypatch.setattr("builtins.input", lambda: answer)
+    assert main(["build", "--config", str(pool[0]), "--apply"]) == 0
+    prompt = capsys.readouterr().err
+    assert "Continue? [y/N]" in prompt
+    assert str(pool[1]) in prompt
+    assert str(pool[2]) in prompt
+    assert (pool[2] / "model/v20260101/file.nc").samefile(pool[1] / "model/v20260101/file.nc")
+
+
+@pytest.mark.parametrize("answer", ["n", "no", "", "maybe"])
+def test_declined_apply_does_not_read_catalog_or_write(pool, remote_catalog, monkeypatch, answer):
+    monkeypatch.setattr("builtins.input", lambda: answer)
+    assert main(["build", "--config", str(pool[0]), "--apply"]) == 1
+    assert not pool[2].parent.exists()
+    assert not remote_catalog
+
+
+@pytest.mark.parametrize("error,code", [(EOFError(), 1), (OSError("no stdin"), 1), (KeyboardInterrupt(), 130)])
+def test_unavailable_confirmation_cancels_apply(pool, monkeypatch, error, code):
+    def interrupted():
+        raise error
+    monkeypatch.setattr("builtins.input", interrupted)
+    assert main(["build", "--config", str(pool[0]), "--apply"]) == code
+    assert not pool[2].parent.exists()
+
+
+@pytest.mark.parametrize("command", ["build", "verify"])
+def test_readonly_commands_never_prompt(pool, monkeypatch, command):
+    def forbidden():
+        pytest.fail("read-only command requested confirmation")
+    monkeypatch.setattr("builtins.input", forbidden)
+    expected = 0 if command == "build" else 1
+    assert main([command, "--config", str(pool[0])]) == expected
