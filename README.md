@@ -67,6 +67,9 @@ be writable; keep it on the VM's local disk rather than read-only Lustre.
 Builds check source sizes, resolve source symlinks and check existing hardlinks
 by inode and device. Correct links are skipped, so interrupted builds can be
 rerun. Existing data files are never overwritten, deleted or copied.
+Directory metadata is reused within a run to reduce filesystem load; every file
+is still checked individually. Keep source and target directory trees stable
+during a run. Apply rechecks destination directories before each hardlink.
 
 Progress and summaries go to stderr with local timestamps and UTC offsets,
 including logical catalog volume in decimal GB/TB and errors. Exact bytes are

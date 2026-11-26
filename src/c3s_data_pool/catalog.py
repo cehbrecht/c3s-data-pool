@@ -10,6 +10,7 @@ from http.client import HTTPException
 from pathlib import Path, PurePosixPath
 
 from .cache import cache_catalog
+from .metadata import MetadataCache
 from .pool import process_row
 from .stats import Stats
 
@@ -63,6 +64,7 @@ def count_catalog_files(name, stream):
 def process_catalog(name, paths, *, build, apply, progress_every, cache_dir=None, refresh=False):
     stats = Stats()
     dataset_directories = set()
+    metadata = MetadataCache()
     try:
         location = cache_catalog(paths["catalog"], cache_dir, refresh=refresh)
         with open_catalog(location) as stream:
@@ -91,7 +93,15 @@ def process_catalog(name, paths, *, build, apply, progress_every, cache_dir=None
                     stats.datasets = len(dataset_directories)
                     stats.logical_bytes += size
                     try:
-                        process_row(paths, relative, size, stats, build=build, apply=apply)
+                        process_row(
+                            paths,
+                            relative,
+                            size,
+                            stats,
+                            build=build,
+                            apply=apply,
+                            metadata=metadata,
+                        )
                     except (OSError, RuntimeError) as exc:
                         stats.errors += 1
                         LOG.error("%s row %d (%s): %s", name, stats.files, relative, exc)

@@ -4,19 +4,23 @@ import logging
 import os
 import stat
 
+from .metadata import MetadataCache
+
 LOG = logging.getLogger("c3s-data-pool")
 
 
-def destination_stat(root, relative):
+def destination_stat(root, relative, metadata=None):
     """Reject destination symlinks, including dangling links and parent links."""
     current = root
     for part in (None, *relative.parts[:-1]):
         if part is not None:
             current = current / part
         try:
-            info = current.lstat()
+            info = current.lstat() if metadata is None else metadata.directory_stat(current)
         except FileNotFoundError:
-            continue
+            return None
+        if info is None:
+            return None
         if not stat.S_ISDIR(info.st_mode):
             raise ValueError(f"destination parent is not a real directory: {current}")
     try:
@@ -32,10 +36,13 @@ def same_file(first, second):
     return (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
 
 
-def process_row(paths, relative, size, stats, *, build, apply):
+def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
+    if metadata is None:
+        metadata = MetadataCache()
     destination = paths["target"] / relative
     try:
-        existing = destination_stat(paths["target"], relative)
+        # Writes retain fresh destination checks; read-only runs reuse directory checks.
+        existing = destination_stat(paths["target"], relative, None if apply else metadata)
     except (ValueError, NotADirectoryError) as exc:
         stats.conflicts += 1
         LOG.error("conflict %s: %s", destination, exc)
@@ -58,8 +65,7 @@ def process_row(paths, relative, size, stats, *, build, apply):
 
     source = paths["source"] / relative
     try:
-        source = source.resolve(strict=True)
-        source_info = source.stat()
+        source, source_info = metadata.source_file(source)
     except FileNotFoundError:
         stats.missing += 1
         LOG.error("missing source: %s", source)
@@ -86,11 +92,7 @@ def process_row(paths, relative, size, stats, *, build, apply):
             LOG.error("conflict: destination is not the expected hardlink: %s", destination)
         return
     if not apply:
-        # Inspect the nearest existing ancestor without creating directories.
-        ancestor = destination.parent
-        while not ancestor.exists():
-            ancestor = ancestor.parent
-        if ancestor.stat().st_dev != source_info.st_dev:
+        if metadata.target_device(destination.parent) != source_info.st_dev:
             stats.hardlink_failures += 1
             LOG.error("hardlink requires the same filesystem: %s -> %s", source, destination)
         else:
