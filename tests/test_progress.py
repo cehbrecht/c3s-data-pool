@@ -33,7 +33,6 @@ def test_heartbeat_reports_while_file_check_is_blocked(tmp_path, monkeypatch, ca
             build=True,
             apply=False,
             progress_every=10000,
-            quick=True,
             heartbeat_seconds=0.01,
         )
     assert not stats.failed

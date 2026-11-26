@@ -7,7 +7,6 @@ class MetadataCache:
     def __init__(self):
         self.source_parents = {}
         self.destination_directories = {}
-        self.target_devices = {}
 
     def source_file(self, path):
         """Resolve each source directory once, but inspect every file freshly."""
@@ -31,13 +30,3 @@ class MetadataCache:
                 info = None
             self.destination_directories[path] = info
         return self.destination_directories[path]
-
-    def target_device(self, path):
-        """Reuse the device of the nearest existing ancestor for each directory."""
-        if path not in self.target_devices:
-            try:
-                device = path.stat().st_dev
-            except FileNotFoundError:
-                device = self.target_device(path.parent)
-            self.target_devices[path] = device
-        return self.target_devices[path]

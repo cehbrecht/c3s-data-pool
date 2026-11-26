@@ -13,7 +13,6 @@ class Stats:
     datasets: int = 0
     logical_bytes: int = 0
     created: int = 0
-    planned: int = 0
     existing: int = 0
     verified: int = 0
     checked: int = 0

@@ -63,11 +63,6 @@ def main(argv=None):
             help="download a fresh copy of remote catalogs",
         )
         if command == "build":
-            sub.add_argument(
-                "--quick",
-                action="store_true",
-                help="read-only source existence/size scan; skip destination and hardlink checks",
-            )
             mode = sub.add_mutually_exclusive_group()
             mode.add_argument(
                 "--apply",
@@ -76,18 +71,12 @@ def main(argv=None):
             )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
-    if args.command == "build" and args.quick and args.apply:
-        parser.error("--quick cannot be combined with --apply")
     try:
         output = RunOutput(args.log_file, args.command)
     except OSError as exc:
         print(f"Cannot open log file: {exc}", file=sys.stderr)
         return 2
-    mode = (
-        "Verify"
-        if args.command == "verify"
-        else ("Quick scan" if args.quick else ("Apply" if args.apply else "Dry-run"))
-    )
+    mode = "Verify" if args.command == "verify" else ("Apply" if args.apply else "Dry-run")
     with output:
         try:
             code = _run(args, output.console)
@@ -101,19 +90,17 @@ def main(argv=None):
 def _run(args, console):
     build = args.command == "build"
     apply = build and args.apply
-    quick = build and args.quick
+    dry_run = build and not apply
     try:
-        collections = load_config(args.config, args.collection, build, resolve_roots=not quick)
+        collections = load_config(args.config, args.collection, build, resolve_roots=not dry_run)
     except (OSError, ValueError, RuntimeError) as exc:
         LOG.error("configuration failed: %s", exc)
         return 2
-    LOG.info(
-        "mode=%s", "quick" if quick else ("apply" if apply else ("dry-run" if build else "verify"))
-    )
+    LOG.info("mode=%s", "apply" if apply else ("dry-run" if build else "verify"))
     LOG.info("config=%s", args.config.absolute())
-    if quick:
+    if dry_run:
         LOG.info(
-            "quick scan checks all source files for existence, regular-file type and size; "
+            "dry-run checks all source files for existence, regular-file type and size; "
             "destination conflicts, filesystem compatibility and hardlink identity are not checked"
         )
     if apply:
@@ -144,15 +131,17 @@ def _run(args, console):
                 progress_every=args.progress_every,
                 cache_dir=args.cache_dir,
                 refresh=args.refresh_catalog,
-                quick=quick,
                 heartbeat_seconds=args.heartbeat_seconds,
                 console=console,
             )
             failed |= stats.failed
             for key, value in vars(stats).items():
                 setattr(total, key, getattr(total, key) + value)
+            if apply and stats.failed:
+                LOG.error("apply stopped; remaining collections were not processed")
+                break
     except KeyboardInterrupt:
         LOG.error("interrupted; existing links are retained, rerun to resume")
         return 130
-    total.report("all collections", "quick summary" if quick else "summary")
+    total.report("all collections", "summary")
     return 1 if failed else 0

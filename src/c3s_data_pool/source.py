@@ -1,4 +1,4 @@
-"""A source-only scan using one stat call per catalog entry."""
+"""Check source existence, type and size with one stat call per catalog entry."""
 
 import logging
 import stat
