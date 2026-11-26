@@ -62,6 +62,9 @@ rerun. Existing data files are never overwritten, deleted or copied.
 Progress and summaries go to stderr with local timestamps and UTC offsets,
 including logical catalog volume in decimal GB/TB and errors. Exact bytes are
 used internally for file-size checks.
+`files` counts processed catalog entries, including duplicates and invalid rows.
+`datasets` counts distinct parent directories of valid entries per collection;
+different versions count separately. Totals sum across collections.
 Exit `0` means success; non-zero means cancellation, an error or an incomplete
 pool. A successful dry-run describes a plan; use verify to check a built pool.
 

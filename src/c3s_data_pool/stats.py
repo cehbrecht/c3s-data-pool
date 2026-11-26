@@ -8,7 +8,8 @@ LOG = logging.getLogger("c3s-data-pool")
 
 @dataclass
 class Stats:
-    rows: int = 0
+    files: int = 0
+    datasets: int = 0
     logical_bytes: int = 0
     created: int = 0
     planned: int = 0
@@ -39,13 +40,14 @@ class Stats:
         counts = " ".join(
             f"{key}={value}"
             for key, value in vars(self).items()
-            if key not in {"rows", "logical_bytes"}
+            if key not in {"files", "datasets", "logical_bytes"}
         )
         LOG.info(
-            "%s %s: rows=%d volume=%.2f %s %s",
+            "%s %s: files=%d datasets=%d volume=%.2f %s %s",
             name,
             label,
-            self.rows,
+            self.files,
+            self.datasets,
             self.logical_bytes / divisor,
             unit,
             counts,

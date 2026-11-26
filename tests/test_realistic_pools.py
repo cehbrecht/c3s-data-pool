@@ -71,11 +71,11 @@ def test_both_collections_survive_source_removal(dkrz_pool):
 
     dry_run = cli(config, "build")
     assert re.search(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [+-]\d{4} INFO mode=dry-run", dry_run)
-    assert "rows=4 volume=0.00 GB created=0 planned=4" in dry_run
+    assert "files=4 datasets=4 volume=0.00 GB created=0 planned=4" in dry_run
     assert all(not target.exists() for target in targets.values())
 
     build = cli(config, "build", "--apply")
-    assert "rows=4 volume=0.00 GB created=4 planned=0" in build
+    assert "files=4 datasets=4 volume=0.00 GB created=4 planned=0" in build
     identities = {}
     for name, rows in files.items():
         for row in rows:
@@ -89,7 +89,7 @@ def test_both_collections_survive_source_removal(dkrz_pool):
         }
 
     repeated = cli(config, "build", "--apply")
-    assert "rows=4 volume=0.00 GB created=0 planned=0 existing=4" in repeated
+    assert "files=4 datasets=4 volume=0.00 GB created=0 planned=0 existing=4" in repeated
     assert all(
         (path.stat().st_dev, path.stat().st_ino) == identity
         for path, identity in identities.items()
@@ -99,7 +99,7 @@ def test_both_collections_survive_source_removal(dkrz_pool):
         path.unlink()
     assert not list(source.rglob("*.nc"))
     verified = cli(config, "verify")
-    assert "rows=4 volume=0.00 GB created=0 planned=0 existing=0 verified=4" in verified
+    assert "files=4 datasets=4 volume=0.00 GB created=0 planned=0 existing=0 verified=4" in verified
     for name, rows in files.items():
         for row in rows:
             assert (targets[name] / row["path"]).read_bytes() == (

@@ -16,7 +16,7 @@ from c3s_data_pool.stats import Stats
     ],
 )
 def test_readable_logical_volume(size, volume, caplog):
-    stats = Stats(rows=1, logical_bytes=size)
+    stats = Stats(files=1, logical_bytes=size)
     with caplog.at_level(logging.INFO):
         stats.report("pool", "progress")
     assert f"volume={volume}" in caplog.text

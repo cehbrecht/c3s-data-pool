@@ -43,6 +43,7 @@ def relative_path(value):
 
 def process_catalog(name, paths, *, build, apply, progress_every):
     stats = Stats()
+    dataset_directories = set()
     last_report = time.monotonic()
     try:
         with open_catalog(paths["catalog"]) as stream:
@@ -53,7 +54,7 @@ def process_catalog(name, paths, *, build, apply, progress_every):
             if len(set(reader.fieldnames)) != len(reader.fieldnames):
                 raise ValueError("catalog has duplicate column names")
             for row in reader:
-                stats.rows += 1
+                stats.files += 1
                 try:
                     if None in row or any(value is None for value in row.values()):
                         raise ValueError("row does not match catalog header")
@@ -63,19 +64,21 @@ def process_catalog(name, paths, *, build, apply, progress_every):
                     size = int(row["size"])
                 except ValueError as exc:
                     stats.invalid += 1
-                    LOG.error("%s row %d: invalid catalog entry: %s", name, stats.rows, exc)
+                    LOG.error("%s row %d: invalid catalog entry: %s", name, stats.files, exc)
                 else:
+                    dataset_directories.add(relative.parent)
+                    stats.datasets = len(dataset_directories)
                     stats.logical_bytes += size
                     try:
                         process_row(paths, relative, size, stats, build=build, apply=apply)
                     except (OSError, RuntimeError) as exc:
                         stats.errors += 1
-                        LOG.error("%s row %d (%s): %s", name, stats.rows, relative, exc)
+                        LOG.error("%s row %d (%s): %s", name, stats.files, relative, exc)
                 now = time.monotonic()
-                if stats.rows % progress_every == 0 or now - last_report >= 30:
+                if stats.files % progress_every == 0 or now - last_report >= 30:
                     stats.report(name, "progress")
                     last_report = now
-        if stats.rows == 0:
+        if stats.files == 0:
             raise ValueError("catalog has no file rows")
     except (
         OSError,
