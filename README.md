@@ -123,6 +123,29 @@ Exit `0` means success; non-zero means cancellation, an error or an incomplete
 pool. `checked` counts source files that passed dry-run; `created` and `existing`
 count apply results. Use verify to check a built pool.
 
+## Copy on Levante with Slurm
+
+From the repository root on a login node, submit the
+[batch script](scripts/levante-copy.sbatch):
+
+```sh
+sbatch scripts/levante-copy.sbatch
+squeue -u "$USER"
+# Replace JOB_ID with the number returned by sbatch.
+tail -F logs/c3s-cmip6-copy-JOB_ID.log
+```
+
+This explicitly applies copies for CMIP6 using `config/dkrz.toml`, automatically
+answers the confirmation, and requests one CPU for 24 hours under `bk1088`.
+Review the config and account before submission; override the account with
+`sbatch --account=ACCOUNT scripts/levante-copy.sbatch` if needed. Conda must already
+be installed in `.conda-env`. Slurm runs the job on a compute node; you can log out
+without tmux. Slurm output goes to `c3s-copy-JOB_ID.out` in the repository root.
+
+To copy decadal instead, append `c3s-cmip6-decadal` to the submission command.
+Resubmit after an interruption to skip existing files with matching sizes. After
+a successful build, run `verify` for that collection before removing sources.
+
 ## Migrate safely
 
 1. Review the config and run a dry-run. Resolve missing files and size mismatches.
