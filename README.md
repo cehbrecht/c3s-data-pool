@@ -22,11 +22,14 @@ GitHub Actions runs synthetic-file tests; no climate data or Lustre is required.
 
 ## Catalogs and configuration
 
-Obtain the `.csv.gz` files manually from the
+Configure a direct HTTPS `.csv.gz` URL from the
 [published catalogs](https://github.com/cp4cds/c3s_34g_manifests/tree/master/intake/catalogs).
 The [main Intake catalog](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s.yaml)
-identifies the versions. The tool reads local catalogs only and streams one row at
-a time; it does not download or load a whole catalog into memory.
+identifies the versions. Alternatively, clone the repository manually and point
+`catalog` to a local `.csv.gz` file. Both options stream one row at a time without
+loading a whole catalog into memory. Remote catalogs are read directly on each
+run, with a 30-second socket timeout and no local cache. No Intake dependency is
+needed; HTTP/network failures produce a non-zero exit code.
 
 Each CSV must have `path`, `size` and `mip_era` columns. `size` is an integer number
 of bytes; `path` is relative to the configured source/target root and includes the
@@ -38,19 +41,25 @@ does not change path handling: it is not prepended to `path`.
 ```yaml
 collections:
   c3s-cmip6:
-    catalog: c3s-cmip6_v20260203.csv.gz
+    catalog: https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s-cmip6/c3s-cmip6_v20260203.csv.gz
     source: /work/ik1017/CMIP6/data/CMIP6
     target: /work/ik1017/C3SCMIP6/data/c3s-cmip6
 
   c3s-cmip6-decadal:
-    catalog: c3s-cmip6-decadal_v20231102.csv.gz
+    catalog: https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s-cmip6-decadal/c3s-cmip6-decadal_v20231102.csv.gz
     source: /work/ik1017/CMIP6/data/CMIP6
     target: /work/ik1017/C3SCMIP6_DECADAL/data/c3s-cmip6-decadal
 ```
 
-Relative catalog, source and target paths are interpreted relative to the YAML
-file's directory, independent of the current working directory. Put these
-catalogs alongside `config/dkrz.yml`, or change their configured paths:
+To use a manually cloned repository instead, replace a collection's `catalog`:
+
+```yaml
+catalog: ../c3s_34g_manifests/intake/catalogs/c3s-cmip6/c3s-cmip6_v20260203.csv.gz
+```
+
+Absolute local paths also work. Relative catalog, source and target paths are
+interpreted relative to the YAML file's directory, independent of the current
+working directory. Remote URLs are used as configured. Direct catalog links:
 
 - [c3s-cmip6_v20260203.csv.gz](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s-cmip6/c3s-cmip6_v20260203.csv.gz)
 - [c3s-cmip6-decadal_v20231102.csv.gz](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s-cmip6-decadal/c3s-cmip6-decadal_v20231102.csv.gz)
@@ -92,7 +101,7 @@ interruption; correct existing hardlinks are retained. No existing data file is
 overwritten, deleted, copied, chmodded or opened for writing. Failed applies may
 leave newly created empty directories and successfully created links.
 
-Absolute catalog paths, traversal, dot/empty path components, backslashes and NULs
+Absolute CSV row paths, traversal, dot/empty path components, backslashes and NULs
 are rejected. Destination symlinks and non-directory parents below the configured
 target root are conflicts. Configured roots themselves are resolved, so an
 explicitly configured root alias is supported. Use trusted configuration and
@@ -112,7 +121,8 @@ dry-run is a plan, not proof of a complete pool or of write permissions/quota.
 
 ## Migration procedure
 
-1. Retain the exact local catalog snapshots used for the migration. Review the
+1. Use GitHub URLs pinned to a commit (replace `refs/heads/master` with a commit
+   SHA), or retain exact local catalog snapshots for the migration. Review the
    configured roots and ensure each target is outside the shared pool's archive
    or removal scope and on the same filesystem as the resolved source data.
 2. Run the default dry-run for both collections. Review the summaries and resolve
@@ -133,5 +143,5 @@ dry-run is a plan, not proof of a complete pool or of write permissions/quota.
    independent of the old pool.
 
 Maintenance consists of explicitly choosing a catalog and rerunning build/verify.
-There is no pruning, synchronization, database or automatic downloading; files
-absent from a later catalog are left untouched.
+There is no pruning, synchronization, database or download cache; files absent
+from a later catalog are left untouched.

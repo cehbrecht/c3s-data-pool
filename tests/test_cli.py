@@ -1,14 +1,18 @@
 import csv
 import errno
 import gzip
+from http.client import IncompleteRead
+import io
 import logging
 import os
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 
 import pytest
 import yaml
 
 from c3s_data_pool.cli import main
+from c3s_data_pool import catalog as catalog_module
 
 
 @pytest.fixture
@@ -256,3 +260,89 @@ def test_zero_size_file(pool):
     pool[4]([("empty", 0, "generic")])
     assert run(pool, "--apply") == 0
     assert run(pool, command="verify") == 0
+
+
+@pytest.fixture
+def remote_catalog(pool, monkeypatch):
+    url = "https://example.test/catalog.csv.gz?version=pinned"
+    config = yaml.safe_load(pool[0].read_text())
+    config["collections"]["test"]["catalog"] = url
+    pool[0].write_text(yaml.safe_dump(config))
+    responses = []
+
+    class StreamingResponse(io.BytesIO):
+        def read(self, size=-1):
+            assert size >= 0, "remote catalog must not be read in one unbounded request"
+            return super().read(size)
+
+    def fetch(location, *, timeout):
+        assert location == url
+        assert timeout == 30
+        response = StreamingResponse(pool[3].read_bytes())
+        responses.append(response)
+        return response
+
+    monkeypatch.setattr(catalog_module, "urlopen", fetch)
+    return responses
+
+
+def test_remote_dry_run_never_writes(pool, remote_catalog, monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("remote dry-run attempted a write")
+    monkeypatch.setattr(Path, "mkdir", forbidden)
+    monkeypatch.setattr(os, "link", forbidden)
+    assert run(pool) == 0
+    assert not pool[2].parent.exists()
+    assert len(remote_catalog) == 1
+    assert remote_catalog[0].closed
+
+
+def test_remote_build_repeat_and_verify_without_source(pool, remote_catalog):
+    assert run(pool, "--apply") == 0
+    assert run(pool, "--apply") == 0
+    source = pool[1] / "model/v20260101/file.nc"
+    assert source.samefile(pool[2] / "model/v20260101/file.nc")
+    source.unlink()
+    assert run(pool, command="verify") == 0
+    assert len(remote_catalog) == 3
+    assert all(response.closed for response in remote_catalog)
+
+
+@pytest.mark.parametrize("error", [
+    HTTPError("https://example.test/catalog.csv.gz", 404, "Not Found", {}, None),
+    URLError("DNS unavailable"),
+    TimeoutError("timed out"),
+    IncompleteRead(b"partial", 100),
+])
+def test_remote_failure_returns_nonzero(pool, remote_catalog, monkeypatch, caplog, error):
+    def fail(*args, **kwargs):
+        raise error
+    monkeypatch.setattr(catalog_module, "urlopen", fail)
+    assert run(pool) == 1
+    assert "catalog failed" in caplog.text
+    assert not pool[2].exists()
+
+
+@pytest.mark.parametrize("contents", [b"not gzip", gzip.compress(b"path,size\nfile,1\n"), gzip.compress(b"path,size,mip_era\nfile,1,x\n")[:-8]])
+def test_remote_invalid_catalog_closes_response(pool, remote_catalog, contents):
+    pool[3].write_bytes(contents)
+    assert run(pool) == 1
+    assert remote_catalog[0].closed
+
+
+@pytest.mark.parametrize("location", [
+    "http://example.test/catalog.csv.gz", "ftp://example.test/catalog.csv.gz",
+    "https:///catalog.csv.gz", "https://example.test/catalog.csv",
+])
+def test_invalid_catalog_url(pool, location):
+    config = yaml.safe_load(pool[0].read_text())
+    config["collections"]["test"]["catalog"] = location
+    pool[0].write_text(yaml.safe_dump(config))
+    assert run(pool) == 2
+
+
+def test_absolute_local_catalog(pool):
+    config = yaml.safe_load(pool[0].read_text())
+    config["collections"]["test"]["catalog"] = str(pool[3])
+    pool[0].write_text(yaml.safe_dump(config))
+    assert run(pool) == 0

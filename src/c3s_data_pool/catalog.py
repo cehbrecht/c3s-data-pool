@@ -1,16 +1,33 @@
 """Stream and validate compressed CSV catalogs, reporting each collection."""
 
 import csv
+from contextlib import contextmanager
 import gzip
+from http.client import HTTPException
+import io
 import logging
 from pathlib import Path, PurePosixPath
 import time
+from urllib.request import urlopen
 import zlib
 
 from .pool import process_row
 from .stats import Stats
 
 LOG = logging.getLogger("c3s-data-pool")
+
+
+@contextmanager
+def open_catalog(location):
+    """Stream local or HTTPS gzip data without buffering the catalog on disk."""
+    if isinstance(location, str) and location.startswith("https://"):
+        with urlopen(location, timeout=30) as response:
+            with gzip.GzipFile(fileobj=response) as compressed:
+                with io.TextIOWrapper(compressed, encoding="utf-8-sig", newline="") as stream:
+                    yield stream
+    else:
+        with gzip.open(location, "rt", encoding="utf-8-sig", newline="") as stream:
+            yield stream
 
 
 def relative_path(value):
@@ -27,7 +44,7 @@ def process_catalog(name, paths, *, build, apply, progress_every):
     stats = Stats()
     last_report = time.monotonic()
     try:
-        with gzip.open(paths["catalog"], "rt", encoding="utf-8-sig", newline="") as stream:
+        with open_catalog(paths["catalog"]) as stream:
             reader = csv.DictReader(stream, strict=True)
             required = {"path", "size", "mip_era"}
             if not reader.fieldnames or not required.issubset(reader.fieldnames):
@@ -59,7 +76,7 @@ def process_catalog(name, paths, *, build, apply, progress_every):
                     last_report = now
         if stats.rows == 0:
             raise ValueError("catalog has no file rows")
-    except (OSError, EOFError, UnicodeError, csv.Error, ValueError, zlib.error) as exc:
+    except (OSError, EOFError, UnicodeError, csv.Error, ValueError, zlib.error, HTTPException) as exc:
         stats.errors += 1
         LOG.error("%s: catalog failed: %s", name, exc)
     stats.report(name, "summary")

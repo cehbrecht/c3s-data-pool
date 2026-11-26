@@ -1,8 +1,24 @@
 """Load and validate collection configuration and local roots."""
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
+
+
+def catalog_location(value, directory):
+    """Preserve HTTPS URLs; resolve local catalog paths relative to the config."""
+    url = urlsplit(value)
+    if url.scheme:
+        if url.scheme != "https" or not url.hostname:
+            raise ValueError("catalog URL must use HTTPS and include a hostname")
+        if not url.path.endswith(".csv.gz"):
+            raise ValueError("catalog URL must point to a .csv.gz file")
+        return url.geturl()
+    path = directory / Path(value).expanduser()
+    if not path.name.endswith(".csv.gz"):
+        raise ValueError("catalog must be a local .csv.gz file or HTTPS URL")
+    return path.absolute()
 
 
 def load_config(filename, selected, build):
@@ -26,14 +42,11 @@ def load_config(filename, selected, build):
         for key in (("catalog", "target", "source") if build else ("catalog", "target")):
             value = values.get(key)
             if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{name}: {key} must be a non-empty local path")
-            path = Path(value).expanduser()
-            # Resolve configured roots, but preserve catalog paths lexically.
-            paths[key] = (config_path.parent / path).absolute()
-            if key != "catalog":
-                paths[key] = paths[key].resolve()
-        if not str(paths["catalog"]).endswith(".csv.gz"):
-            raise ValueError(f"{name}: catalog must be a local .csv.gz file")
+                raise ValueError(f"{name}: {key} must be a non-empty string")
+            if key == "catalog":
+                paths[key] = catalog_location(value, config_path.parent)
+            else:
+                paths[key] = (config_path.parent / Path(value).expanduser()).resolve()
         if build and paths["source"] == paths["target"]:
             raise ValueError(f"{name}: source and target must be different directories")
         result.append((name, paths))
