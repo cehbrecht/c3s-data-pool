@@ -14,6 +14,10 @@ make install
 conda activate ./.conda-env
 ```
 
+`make env` creates `.conda-env` from [environment.yml](environment.yml).
+Package and development dependencies stay in `pyproject.toml`, installed with
+`make install` or `make develop`. Override `CONDA`, `ENV_PREFIX` or `ENV_FILE` as needed.
+
 ## Configure
 
 Edit [config/dkrz.toml](config/dkrz.toml), which includes both C3S collections:
