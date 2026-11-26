@@ -16,8 +16,8 @@ def catalog_location(value, directory):
             raise ValueError("catalog URL must point to a .csv.gz file")
         return url.geturl()
     path = directory / Path(value).expanduser()
-    if not path.name.endswith(".csv.gz"):
-        raise ValueError("catalog must be a local .csv.gz file or HTTPS URL")
+    if not path.name.endswith((".csv", ".csv.gz")):
+        raise ValueError("catalog must be a local .csv or .csv.gz file or HTTPS .csv.gz URL")
     return path.absolute()
 
 

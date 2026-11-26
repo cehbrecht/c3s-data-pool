@@ -1,4 +1,4 @@
-"""Stream and validate compressed CSV catalogs, reporting each collection."""
+"""Stream and validate CSV catalogs, reporting each collection."""
 
 import csv
 from contextlib import contextmanager
@@ -19,14 +19,15 @@ LOG = logging.getLogger("c3s-data-pool")
 
 @contextmanager
 def open_catalog(location):
-    """Stream local or HTTPS gzip data without buffering the catalog on disk."""
+    """Stream local CSV/gzip or HTTPS gzip data without a disk cache."""
     if isinstance(location, str) and location.startswith("https://"):
         with urlopen(location, timeout=30) as response:
             with gzip.GzipFile(fileobj=response) as compressed:
                 with io.TextIOWrapper(compressed, encoding="utf-8-sig", newline="") as stream:
                     yield stream
     else:
-        with gzip.open(location, "rt", encoding="utf-8-sig", newline="") as stream:
+        opener = gzip.open if Path(location).suffix == ".gz" else open
+        with opener(location, "rt", encoding="utf-8-sig", newline="") as stream:
             yield stream
 
 

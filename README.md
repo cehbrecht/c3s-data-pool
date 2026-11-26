@@ -26,10 +26,15 @@ Configure a direct HTTPS `.csv.gz` URL from the
 [published catalogs](https://github.com/cp4cds/c3s_34g_manifests/tree/master/intake/catalogs).
 The [main Intake catalog](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s.yaml)
 identifies the versions. Alternatively, clone the repository manually and point
-`catalog` to a local `.csv.gz` file. Both options stream one row at a time without
+`catalog` to a local `.csv.gz` or uncompressed `.csv` file. Both options stream one row at a time without
 loading a whole catalog into memory. Remote catalogs are read directly on each
 run, with a 30-second socket timeout and no local cache. No Intake dependency is
 needed; HTTP/network failures produce a non-zero exit code.
+
+Small, readable synthetic catalogs for CMIP6 and decadal are in `tests/fixtures/`.
+The integration tests build both collections in a temporary DKRZ-style directory
+tree, check repeat builds and collection selection, and verify retained files
+after removing the originals. They exercise both plain and gzipped CSVs.
 
 Each CSV must have `path`, `size` and `mip_era` columns. `size` is an integer number
 of bytes; `path` is relative to the configured source/target root and includes the

@@ -1,4 +1,4 @@
-"""Build and verify local hardlink data pools from compressed CSV catalogs."""
+"""Build and verify local hardlink data pools from CSV catalogs."""
 
 import argparse
 import logging
