@@ -46,8 +46,12 @@ def process_row(paths, relative, size, stats, *, build, apply):
             LOG.error("missing destination: %s", destination)
         elif existing.st_size != size:
             stats.size_mismatches += 1
-            LOG.error("destination size mismatch %s: expected=%d actual=%d",
-                      destination, size, existing.st_size)
+            LOG.error(
+                "destination size mismatch %s: expected=%d actual=%d",
+                destination,
+                size,
+                existing.st_size,
+            )
         else:
             stats.verified += 1
         return
@@ -66,8 +70,9 @@ def process_row(paths, relative, size, stats, *, build, apply):
         return
     if source_info.st_size != size:
         stats.size_mismatches += 1
-        LOG.error("source size mismatch %s: expected=%d actual=%d",
-                  source, size, source_info.st_size)
+        LOG.error(
+            "source size mismatch %s: expected=%d actual=%d", source, size, source_info.st_size
+        )
         return
     if source == destination:
         stats.conflicts += 1
@@ -99,12 +104,20 @@ def process_row(paths, relative, size, stats, *, build, apply):
             os.link(source, destination, follow_symlinks=False)
         except FileExistsError:
             concurrent = destination_stat(paths["target"], relative)
-            if concurrent is not None and same_file(concurrent, source_info) and concurrent.st_size == size:
+            if (
+                concurrent is not None
+                and same_file(concurrent, source_info)
+                and concurrent.st_size == size
+            ):
                 stats.existing += 1
                 return
             raise ValueError("destination appeared and is not the expected hardlink")
         linked = destination.lstat()
-        if not stat.S_ISREG(linked.st_mode) or not same_file(linked, source_info) or linked.st_size != size:
+        if (
+            not stat.S_ISREG(linked.st_mode)
+            or not same_file(linked, source_info)
+            or linked.st_size != size
+        ):
             raise ValueError("new link failed inode/device/size validation; inspect destination")
         stats.created += 1
     except (OSError, ValueError) as exc:

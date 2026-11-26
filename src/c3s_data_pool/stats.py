@@ -1,7 +1,7 @@
 """Progress reporting and summary counters."""
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 
 LOG = logging.getLogger("c3s-data-pool")
 
@@ -23,10 +23,17 @@ class Stats:
 
     @property
     def failed(self):
-        return any((self.missing, self.size_mismatches, self.conflicts,
-                    self.invalid, self.hardlink_failures, self.errors))
+        return any(
+            (
+                self.missing,
+                self.size_mismatches,
+                self.conflicts,
+                self.invalid,
+                self.hardlink_failures,
+                self.errors,
+            )
+        )
 
     def report(self, name, label):
         counts = " ".join(f"{key}={value}" for key, value in vars(self).items())
-        LOG.info("%s %s: %s logical_TiB=%.6f", name, label, counts,
-                 self.logical_bytes / 1024**4)
+        LOG.info("%s %s: %s logical_TiB=%.6f", name, label, counts, self.logical_bytes / 1024**4)

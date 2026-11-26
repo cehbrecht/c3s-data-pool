@@ -13,6 +13,7 @@ dependencies = ["PyYAML>=6"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+lint = ["ruff==0.14.13"]
 
 [project.scripts]
 c3s-data-pool = "c3s_data_pool.cli:main"
@@ -23,3 +24,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [".conda-env", ".conda-envs"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

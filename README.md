@@ -16,9 +16,10 @@ python -m pip install -e .
 ```
 
 Dependencies, test extras and the CLI entry point are defined in `pyproject.toml`.
-For development, install `python -m pip install -e '.[test]'` and run `pytest`
+For development, install `python -m pip install -e '.[test,lint]'` and run `make check`
 inside the Conda environment.
-GitHub Actions runs synthetic-file tests; no climate data or Lustre is required.
+GitHub Actions runs Ruff lint/format checks and synthetic-file tests; no climate
+data or Lustre is required.
 
 ## Common development tasks
 
@@ -28,7 +29,10 @@ The Makefile uses `.conda-env/bin/python` by default, so activation is optional:
 make help                # Show available tasks (also the default for make)
 make env                 # Create the Conda environment
 make install             # Install the package
-make develop             # Editable install with test dependencies
+make develop             # Editable install with test and lint dependencies
+make lint                # Check Python code, imports and formatting
+make format              # Sort imports and format Python code
+make check               # Lint and all tests
 make test                # All tests
 make test-integration    # Dummy CMIP6 and decadal pool tests
 make build               # Package wheel in dist/

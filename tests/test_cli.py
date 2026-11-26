@@ -1,19 +1,19 @@
 import csv
 import errno
 import gzip
-from http.client import IncompleteRead
 import io
 import logging
 import os
+from http.client import IncompleteRead
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 import pytest
 import yaml
 
-from c3s_data_pool.cli import main
 from c3s_data_pool import catalog as catalog_module
+from c3s_data_pool.cli import main
 
 
 @pytest.fixture
@@ -23,9 +23,19 @@ def pool(tmp_path):
     target = tmp_path / "not-created" / "pool"
     catalog = tmp_path / "files.csv.gz"
     config = tmp_path / "config.yml"
-    config.write_text(yaml.safe_dump({"collections": {"test": {
-        "source": "source", "target": "not-created/pool", "catalog": "files.csv.gz",
-    }}}))
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "collections": {
+                    "test": {
+                        "source": "source",
+                        "target": "not-created/pool",
+                        "catalog": "files.csv.gz",
+                    }
+                }
+            }
+        )
+    )
 
     def write(rows=None):
         if rows is None:
@@ -52,6 +62,7 @@ def run(pool, *args, command="build"):
 def test_dry_run_never_writes(pool, monkeypatch, caplog, args):
     def forbidden(*args, **kwargs):
         pytest.fail("dry-run attempted a write")
+
     monkeypatch.setattr(Path, "mkdir", forbidden)
     monkeypatch.setattr(os, "link", forbidden)
     with caplog.at_level(logging.INFO):
@@ -115,7 +126,10 @@ def test_conflicts_never_overwritten(pool, kind):
         assert target.read_bytes() == b"data"
 
 
-@pytest.mark.parametrize("path", ["../escape", "/absolute", "a/../../escape", "a/./b", "a//b", "a/", "", "a\\b", "a\x00b"])
+@pytest.mark.parametrize(
+    "path",
+    ["../escape", "/absolute", "a/../../escape", "a/./b", "a//b", "a/", "", "a\\b", "a\x00b"],
+)
 def test_invalid_paths(pool, path):
     pool[4]([(path, 0, "other")])
     assert run(pool, "--apply") == 1
@@ -159,6 +173,7 @@ def test_parent_file_conflict(pool, operation):
 def test_hardlink_failure(pool, monkeypatch, caplog):
     def fail(*args, **kwargs):
         raise OSError(errno.EXDEV, "Invalid cross-device link")
+
     monkeypatch.setattr(os, "link", fail)
     assert run(pool, "--apply") == 1
     assert "hardlink failed" in caplog.text
@@ -179,7 +194,15 @@ def test_invalid_sizes(pool, size):
     assert run(pool, "--apply") == 1
 
 
-@pytest.mark.parametrize("contents", ["path,size\nx,1\n", "path,size,mip_era\n", "path,size,mip_era\nx,4\n", "path,size,mip_era\nx,4,a,extra\n"])
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "path,size\nx,1\n",
+        "path,size,mip_era\n",
+        "path,size,mip_era\nx,4\n",
+        "path,size,mip_era\nx,4,a,extra\n",
+    ],
+)
 def test_malformed_catalog(pool, contents):
     with gzip.open(pool[3], "wt") as stream:
         stream.write(contents)
@@ -193,7 +216,11 @@ def test_truncated_gzip(pool):
 
 def test_collection_selection_and_progress(pool, caplog):
     config = yaml.safe_load(pool[0].read_text())
-    config["collections"]["unused"] = {"catalog": "missing.csv.gz", "target": "other", "source": "source"}
+    config["collections"]["unused"] = {
+        "catalog": "missing.csv.gz",
+        "target": "other",
+        "source": "source",
+    }
     pool[0].write_text(yaml.safe_dump(config))
     with caplog.at_level(logging.INFO):
         assert run(pool, "--collection", "test", "--progress-every", "1") == 0
@@ -217,9 +244,11 @@ def test_mutually_exclusive_modes(pool):
 
 def test_concurrent_matching_link_is_restartable(pool, monkeypatch):
     original_link = os.link
+
     def race(source, target, **kwargs):
         original_link(source, target, **kwargs)
         raise FileExistsError(errno.EEXIST, "another builder won")
+
     monkeypatch.setattr(os, "link", race)
     assert run(pool, "--apply") == 0
 
@@ -292,6 +321,7 @@ def remote_catalog(pool, monkeypatch):
 def test_remote_dry_run_never_writes(pool, remote_catalog, monkeypatch):
     def forbidden(*args, **kwargs):
         pytest.fail("remote dry-run attempted a write")
+
     monkeypatch.setattr(Path, "mkdir", forbidden)
     monkeypatch.setattr(os, "link", forbidden)
     assert run(pool) == 0
@@ -311,32 +341,48 @@ def test_remote_build_repeat_and_verify_without_source(pool, remote_catalog):
     assert all(response.closed for response in remote_catalog)
 
 
-@pytest.mark.parametrize("error", [
-    HTTPError("https://example.test/catalog.csv.gz", 404, "Not Found", {}, None),
-    URLError("DNS unavailable"),
-    TimeoutError("timed out"),
-    IncompleteRead(b"partial", 100),
-])
+@pytest.mark.parametrize(
+    "error",
+    [
+        HTTPError("https://example.test/catalog.csv.gz", 404, "Not Found", {}, None),
+        URLError("DNS unavailable"),
+        TimeoutError("timed out"),
+        IncompleteRead(b"partial", 100),
+    ],
+)
 def test_remote_failure_returns_nonzero(pool, remote_catalog, monkeypatch, caplog, error):
     def fail(*args, **kwargs):
         raise error
+
     monkeypatch.setattr(catalog_module, "urlopen", fail)
     assert run(pool) == 1
     assert "catalog failed" in caplog.text
     assert not pool[2].exists()
 
 
-@pytest.mark.parametrize("contents", [b"not gzip", gzip.compress(b"path,size\nfile,1\n"), gzip.compress(b"path,size,mip_era\nfile,1,x\n")[:-8]])
+@pytest.mark.parametrize(
+    "contents",
+    [
+        b"not gzip",
+        gzip.compress(b"path,size\nfile,1\n"),
+        gzip.compress(b"path,size,mip_era\nfile,1,x\n")[:-8],
+    ],
+)
 def test_remote_invalid_catalog_closes_response(pool, remote_catalog, contents):
     pool[3].write_bytes(contents)
     assert run(pool) == 1
     assert remote_catalog[0].closed
 
 
-@pytest.mark.parametrize("location", [
-    "http://example.test/catalog.csv.gz", "ftp://example.test/catalog.csv.gz",
-    "https:///catalog.csv.gz", "https://example.test/catalog.csv",
-])
+@pytest.mark.parametrize(
+    "location",
+    [
+        "http://example.test/catalog.csv.gz",
+        "ftp://example.test/catalog.csv.gz",
+        "https:///catalog.csv.gz",
+        "https://example.test/catalog.csv",
+    ],
+)
 def test_invalid_catalog_url(pool, location):
     config = yaml.safe_load(pool[0].read_text())
     config["collections"]["test"]["catalog"] = location
@@ -370,10 +416,13 @@ def test_declined_apply_does_not_read_catalog_or_write(pool, remote_catalog, mon
     assert not remote_catalog
 
 
-@pytest.mark.parametrize("error,code", [(EOFError(), 1), (OSError("no stdin"), 1), (KeyboardInterrupt(), 130)])
+@pytest.mark.parametrize(
+    "error,code", [(EOFError(), 1), (OSError("no stdin"), 1), (KeyboardInterrupt(), 130)]
+)
 def test_unavailable_confirmation_cancels_apply(pool, monkeypatch, error, code):
     def interrupted():
         raise error
+
     monkeypatch.setattr("builtins.input", interrupted)
     assert main(["build", "--config", str(pool[0]), "--apply"]) == code
     assert not pool[2].parent.exists()
@@ -383,6 +432,7 @@ def test_unavailable_confirmation_cancels_apply(pool, monkeypatch, error, code):
 def test_readonly_commands_never_prompt(pool, monkeypatch, command):
     def forbidden():
         pytest.fail("read-only command requested confirmation")
+
     monkeypatch.setattr("builtins.input", forbidden)
     expected = 0 if command == "build" else 1
     assert main([command, "--config", str(pool[0])]) == expected

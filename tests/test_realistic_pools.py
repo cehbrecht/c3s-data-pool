@@ -2,9 +2,9 @@
 
 import csv
 import gzip
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import yaml
@@ -58,7 +58,9 @@ def cli(config, command, *options):
     result = subprocess.run(
         [sys.executable, "-m", "c3s_data_pool", command, "--config", str(config), *options],
         input="yes\n" if "--apply" in options else "",
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     return result.stderr
@@ -87,8 +89,10 @@ def test_both_collections_survive_source_removal(dkrz_pool):
 
     repeated = cli(config, "build", "--apply")
     assert "rows=4 logical_bytes=120 created=0 planned=0 existing=4" in repeated
-    assert all((path.stat().st_dev, path.stat().st_ino) == identity
-               for path, identity in identities.items())
+    assert all(
+        (path.stat().st_dev, path.stat().st_ino) == identity
+        for path, identity in identities.items()
+    )
 
     for path in originals:
         path.unlink()

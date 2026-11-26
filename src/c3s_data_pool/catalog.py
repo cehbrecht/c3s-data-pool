@@ -1,15 +1,15 @@
 """Stream and validate CSV catalogs, reporting each collection."""
 
 import csv
-from contextlib import contextmanager
 import gzip
-from http.client import HTTPException
 import io
 import logging
-from pathlib import Path, PurePosixPath
 import time
-from urllib.request import urlopen
 import zlib
+from contextlib import contextmanager
+from http.client import HTTPException
+from pathlib import Path, PurePosixPath
+from urllib.request import urlopen
 
 from .pool import process_row
 from .stats import Stats
@@ -77,7 +77,15 @@ def process_catalog(name, paths, *, build, apply, progress_every):
                     last_report = now
         if stats.rows == 0:
             raise ValueError("catalog has no file rows")
-    except (OSError, EOFError, UnicodeError, csv.Error, ValueError, zlib.error, HTTPException) as exc:
+    except (
+        OSError,
+        EOFError,
+        UnicodeError,
+        csv.Error,
+        ValueError,
+        zlib.error,
+        HTTPException,
+    ) as exc:
         stats.errors += 1
         LOG.error("%s: catalog failed: %s", name, exc)
     stats.report(name, "summary")

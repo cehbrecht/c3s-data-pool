@@ -8,13 +8,16 @@ CONFIG ?= config/dkrz.yml
 ARGS ?=
 TEST_ARGS ?=
 
-.PHONY: help env install develop test test-integration build dry-run apply verify
+.PHONY: help env install develop lint format check test test-integration build dry-run apply verify
 
 help:
 	@printf '%s\n' \
 	  'env               Create the project Conda environment' \
 	  'install           Install the package and runtime dependencies' \
-	  'develop           Install editable package with test dependencies' \
+	  'develop           Install editable package with test and lint dependencies' \
+	  'lint              Check Python code, imports and formatting with Ruff' \
+	  'format            Sort imports and format Python code with Ruff' \
+	  'check             Run lint and all tests' \
 	  'test              Run all tests (TEST_ARGS="-v" for verbose output)' \
 	  'test-integration  Run tests against the dummy CMIP6 and decadal pools' \
 	  'build             Build a package wheel in dist/' \
@@ -31,7 +34,17 @@ install:
 	"$(PYTHON)" -m pip install .
 
 develop:
-	"$(PYTHON)" -m pip install -e '.[test]'
+	"$(PYTHON)" -m pip install -e '.[test,lint]'
+
+lint:
+	"$(PYTHON)" -m ruff check src tests
+	"$(PYTHON)" -m ruff format --check src tests
+
+format:
+	"$(PYTHON)" -m ruff check --select I --fix src tests
+	"$(PYTHON)" -m ruff format src tests
+
+check: lint test
 
 test:
 	"$(PYTHON)" -m pytest $(TEST_ARGS)

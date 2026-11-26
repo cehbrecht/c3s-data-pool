@@ -39,7 +39,7 @@ def load_config(filename, selected, build):
         if not isinstance(name, str) or not isinstance(values, dict):
             raise ValueError("each collection must have a string name and a mapping")
         paths = {}
-        for key in (("catalog", "target", "source") if build else ("catalog", "target")):
+        for key in ("catalog", "target", "source") if build else ("catalog", "target"):
             value = values.get(key)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name}: {key} must be a non-empty string")

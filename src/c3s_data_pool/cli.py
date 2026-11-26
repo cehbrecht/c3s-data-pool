@@ -2,8 +2,8 @@
 
 import argparse
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import yaml
 
@@ -43,7 +43,11 @@ def main(argv=None):
         sub.add_argument("--progress-every", type=positive_int, default=10000, metavar="ROWS")
         if command == "build":
             mode = sub.add_mutually_exclusive_group()
-            mode.add_argument("--apply", action="store_true", help="create directories and hardlinks after confirmation")
+            mode.add_argument(
+                "--apply",
+                action="store_true",
+                help="create directories and hardlinks after confirmation",
+            )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -68,8 +72,9 @@ def main(argv=None):
     total = Stats()
     try:
         for name, paths in collections:
-            stats = process_catalog(name, paths, build=build, apply=apply,
-                                    progress_every=args.progress_every)
+            stats = process_catalog(
+                name, paths, build=build, apply=apply, progress_every=args.progress_every
+            )
             failed |= stats.failed
             for key, value in vars(stats).items():
                 setattr(total, key, getattr(total, key) + value)
