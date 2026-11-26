@@ -36,6 +36,9 @@ Catalogs are streamed row by row.
 
 ## Build and verify
 
+Run the CLI directly. Without activating Conda, use
+`.conda-env/bin/c3s-data-pool` instead of `c3s-data-pool` below.
+
 ```sh
 # Inspect first: dry-run is the default and creates nothing.
 c3s-data-pool build --config config/dkrz.yml
@@ -84,4 +87,5 @@ make test-integration    # Dummy CMIP6 and decadal pool tests
 
 Tests use tiny synthetic files in temporary directories; no climate data or
 Lustre access is needed. GitHub CI runs lint and tests. Use `make help` for all
-targets; Make uses `.conda-env/bin/python` without requiring activation.
+development targets; Make uses `.conda-env/bin/python` without requiring
+activation. `make build` packages a wheel; use the CLI for data pool operations.
