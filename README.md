@@ -52,6 +52,9 @@ Run the CLI directly. Without activating Conda, use
 # Inspect first: dry-run is the default; only the local catalog cache is written.
 c3s-data-pool build --config config/dkrz.toml
 
+# Faster first pass: check every source file's existence, type and size only.
+c3s-data-pool build --config config/rook.toml --quick
+
 # Review the displayed roots and answer yes to create hardlinks.
 c3s-data-pool build --config config/dkrz.toml --apply
 
@@ -63,6 +66,16 @@ Add `--collection c3s-cmip6` or `--collection c3s-cmip6-decadal` to select a
 collection. Apply requires `y` or `yes`; Enter or unavailable stdin cancels.
 Dry-run never creates data pool directories or hardlinks. Its catalog cache must
 be writable; keep it on the VM's local disk rather than read-only Lustre.
+
+`--quick` makes one stat call per source file and follows symlinks. It skips
+destination, hardlink identity and filesystem compatibility checks; a successful
+quick scan does not establish that a pool can be built. It cannot be combined
+with `--apply`. Run a full build/verify before retiring the original pool.
+
+A heartbeat every 15 seconds shows completed files, elapsed time, the current
+stage/file and how long that operation has been active, even during slow
+filesystem calls. It makes no extra filesystem requests. Use
+`--heartbeat-seconds 5` for more frequent updates.
 
 Builds check source sizes, resolve source symlinks and check existing hardlinks
 by inode and device. Correct links are skipped, so interrupted builds can be

@@ -74,6 +74,12 @@ def test_both_collections_survive_source_removal(dkrz_pool):
     assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=0 planned=4" in dry_run
     assert all(not target.exists() for target in targets.values())
 
+    quick = cli(config, "build", "--quick")
+    assert "all collections quick summary: files=4/4 (100.0%)" in quick
+    assert "checked=4" in quick
+    assert "planned=0" in quick
+    assert all(not target.exists() for target in targets.values())
+
     build = cli(config, "build", "--apply")
     assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=4 planned=0" in build
     identities = {}

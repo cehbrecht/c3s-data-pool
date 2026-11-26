@@ -24,7 +24,7 @@ def catalog_location(value, directory):
     return path.absolute()
 
 
-def load_config(filename, selected, build):
+def load_config(filename, selected, build, *, resolve_roots=True):
     config_path = Path(filename).resolve()
     if config_path.suffix != ".toml":
         raise ValueError("config must be a .toml file")
@@ -51,7 +51,8 @@ def load_config(filename, selected, build):
             if key == "catalog":
                 paths[key] = catalog_location(value, config_path.parent)
             else:
-                paths[key] = (config_path.parent / Path(value).expanduser()).resolve()
+                path = config_path.parent / Path(value).expanduser()
+                paths[key] = path.resolve() if resolve_roots else path.absolute()
         if build and paths["source"] == paths["target"]:
             raise ValueError(f"{name}: source and target must be different directories")
         result.append((name, paths))

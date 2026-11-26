@@ -16,6 +16,7 @@ class Stats:
     planned: int = 0
     existing: int = 0
     verified: int = 0
+    checked: int = 0
     missing: int = 0
     size_mismatches: int = 0
     conflicts: int = 0

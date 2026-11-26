@@ -40,6 +40,13 @@ def main(argv=None):
         sub.add_argument("--collection", action="append", help="select a collection (repeatable)")
         sub.add_argument("--progress-every", type=positive_int, default=10000, metavar="ROWS")
         sub.add_argument(
+            "--heartbeat-seconds",
+            type=positive_int,
+            default=15,
+            metavar="SECONDS",
+            help="activity heartbeat interval, including during slow filesystem calls (default: 15)",
+        )
+        sub.add_argument(
             "--cache-dir",
             type=Path,
             help="local catalog cache (default: ~/.cache/c3s-data-pool, respecting XDG_CACHE_HOME)",
@@ -50,6 +57,11 @@ def main(argv=None):
             help="download a fresh copy of remote catalogs",
         )
         if command == "build":
+            sub.add_argument(
+                "--quick",
+                action="store_true",
+                help="read-only source existence/size scan; skip destination and hardlink checks",
+            )
             mode = sub.add_mutually_exclusive_group()
             mode.add_argument(
                 "--apply",
@@ -58,6 +70,8 @@ def main(argv=None):
             )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
+    if args.command == "build" and args.quick and args.apply:
+        parser.error("--quick cannot be combined with --apply")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -65,12 +79,20 @@ def main(argv=None):
     )
     build = args.command == "build"
     apply = build and args.apply
+    quick = build and args.quick
     try:
-        collections = load_config(args.config, args.collection, build)
+        collections = load_config(args.config, args.collection, build, resolve_roots=not quick)
     except (OSError, ValueError, RuntimeError) as exc:
         LOG.error("configuration failed: %s", exc)
         return 2
-    LOG.info("mode=%s", "apply" if apply else ("dry-run" if build else "verify"))
+    LOG.info(
+        "mode=%s", "quick" if quick else ("apply" if apply else ("dry-run" if build else "verify"))
+    )
+    if quick:
+        LOG.info(
+            "quick scan checks all source files for existence, regular-file type and size; "
+            "destination conflicts, filesystem compatibility and hardlink identity are not checked"
+        )
     if apply:
         try:
             confirmed = confirm_apply(collections)
@@ -92,6 +114,8 @@ def main(argv=None):
                 progress_every=args.progress_every,
                 cache_dir=args.cache_dir,
                 refresh=args.refresh_catalog,
+                quick=quick,
+                heartbeat_seconds=args.heartbeat_seconds,
             )
             failed |= stats.failed
             for key, value in vars(stats).items():
@@ -99,5 +123,5 @@ def main(argv=None):
     except KeyboardInterrupt:
         LOG.error("interrupted; existing links are retained, rerun to resume")
         return 130
-    total.report("all collections", "summary")
+    total.report("all collections", "quick summary" if quick else "summary")
     return 1 if failed else 0

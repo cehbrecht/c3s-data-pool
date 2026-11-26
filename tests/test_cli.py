@@ -460,3 +460,78 @@ def test_readonly_commands_never_prompt(pool, monkeypatch, command):
     monkeypatch.setattr("builtins.input", forbidden)
     expected = 0 if command == "build" else 1
     assert main([command, "--config", str(pool[0])]) == expected
+
+
+def test_quick_scan_never_checks_destination_or_prompts(pool, monkeypatch, caplog):
+    from c3s_data_pool import catalog as catalog_module
+
+    original_resolve = Path.resolve
+
+    def resolve_config_only(path, *args, **kwargs):
+        assert path == pool[0], "quick mode resolved a filesystem root"
+        return original_resolve(path, *args, **kwargs)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("quick mode attempted a full check, write or prompt")
+
+    monkeypatch.setattr(Path, "resolve", resolve_config_only)
+    monkeypatch.setattr(Path, "mkdir", forbidden)
+    monkeypatch.setattr(catalog_module, "process_row", forbidden)
+    monkeypatch.setattr("builtins.input", forbidden)
+    monkeypatch.setattr(os, "link", forbidden)
+    with caplog.at_level(logging.INFO):
+        assert main(["build", "--config", str(pool[0]), "--quick"]) == 0
+    assert "mode=quick" in caplog.text
+    assert "checked=1" in caplog.text
+    assert "planned=0" in caplog.text
+    assert "not checked" in caplog.text
+    assert not pool[2].exists()
+
+
+@pytest.mark.parametrize("problem", ["missing", "size", "directory", "traversal"])
+def test_quick_scan_reports_failures(pool, problem):
+    source = pool[1] / "model/v20260101/file.nc"
+    if problem == "missing":
+        source.unlink()
+    elif problem == "size":
+        source.write_bytes(b"wrong size")
+    elif problem == "directory":
+        source.unlink()
+        source.mkdir()
+    else:
+        pool[4]([("../escape", 4, "test")])
+    assert run(pool, "--quick") == 1
+    assert not pool[2].exists()
+
+
+@pytest.mark.parametrize("broken", [False, True])
+def test_quick_source_symlinks(pool, broken):
+    source = pool[1] / "model/v20260101/file.nc"
+    source.unlink()
+    real = pool[1] / "real"
+    if not broken:
+        real.write_bytes(b"data")
+    source.symlink_to(real)
+    assert run(pool, "--quick") == (1 if broken else 0)
+
+
+def test_quick_skips_destination_conflicts(pool):
+    destination = pool[2] / "model/v20260101/file.nc"
+    destination.parent.mkdir(parents=True)
+    destination.write_bytes(b"independent copy")
+    assert run(pool, "--quick") == 0
+    assert run(pool) == 1
+
+
+def test_quick_cannot_apply(pool):
+    with pytest.raises(SystemExit) as error:
+        run(pool, "--quick", "--apply")
+    assert error.value.code == 2
+    assert not pool[2].exists()
+
+
+@pytest.mark.parametrize("interval", ["0", "-1"])
+def test_heartbeat_interval_must_be_positive(pool, interval):
+    with pytest.raises(SystemExit) as error:
+        run(pool, "--heartbeat-seconds", interval)
+    assert error.value.code == 2
