@@ -10,10 +10,7 @@ from c3s_data_pool.stats import Stats
 
 
 @pytest.mark.parametrize("existing_pool", [False, True])
-@pytest.mark.parametrize("quick", [False, True])
-def test_shared_directories_do_not_repeat_metadata_walks(
-    tmp_path, monkeypatch, existing_pool, quick
-):
+def test_source_scan_uses_one_stat_per_file(tmp_path, monkeypatch, existing_pool):
     source, target = tmp_path / "source", tmp_path / "target"
     dataset = "activity/institute/model/experiment/member/table/variable/grid/version"
     source_dir = source / dataset
@@ -52,15 +49,13 @@ def test_shared_directories_do_not_repeat_metadata_walks(
         build=True,
         apply=False,
         progress_every=10000,
-        quick=quick,
     )
     assert not stats.failed
     assert stats.files == 100
-    assert stats.existing == (100 if existing_pool and not quick else 0)
-    assert stats.planned == (100 if not existing_pool and not quick else 0)
-    assert stats.checked == (100 if quick else 0)
+    assert stats.existing == 0
+    assert stats.checked == 100
     # Allow room for platform differences, but catch per-file directory walks.
-    assert calls < (150 if quick else 500)
+    assert calls < 150
 
 
 def test_source_file_metadata_is_not_cached(tmp_path):

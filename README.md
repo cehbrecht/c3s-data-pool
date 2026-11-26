@@ -49,11 +49,8 @@ Run the CLI directly. Without activating Conda, use
 `.conda-env/bin/c3s-data-pool` instead of `c3s-data-pool` below.
 
 ```sh
-# Inspect first: dry-run writes only the local catalog cache and log.
-c3s-data-pool build --config config/dkrz.toml
-
-# Faster first pass: check every source file's existence, type and size only.
-c3s-data-pool build --config config/rook.toml --quick --log-file logs/cmip6-quick.log
+# Check source existence, type and size; only the local cache and log are written.
+c3s-data-pool build --config config/rook.toml --log-file logs/cmip6-dry-run.log
 
 # Review the displayed roots and answer yes to create hardlinks.
 c3s-data-pool build --config config/dkrz.toml --apply
@@ -67,10 +64,11 @@ collection. Apply requires `y` or `yes`; Enter or unavailable stdin cancels.
 Dry-run never creates data pool directories or hardlinks. Keep its writable cache
 and log on the VM's local disk rather than read-only Lustre.
 
-`--quick` makes one stat call per source file and follows symlinks. It skips
-destination, hardlink identity and filesystem compatibility checks; a successful
-quick scan does not establish that a pool can be built. It cannot be combined
-with `--apply`. Run a full build/verify before retiring the original pool.
+Dry-run makes one stat call per source file and follows symlinks. That single
+response provides existence, type and size; comparing the size costs no extra
+filesystem request. Destination conflicts and filesystem compatibility are
+checked during apply, so a successful dry-run cannot guarantee a successful
+build.
 
 The console shows an updating progress bar, then a short final status and log
 path. Detailed messages go to `~/.local/state/c3s-data-pool/logs` (respecting
@@ -81,12 +79,16 @@ The bar keeps animating during slow filesystem calls without extra filesystem
 requests. Heartbeat log entries every 15 seconds include the current file and
 elapsed time; use `--heartbeat-seconds 5` for more frequent log entries.
 
-Builds check source sizes, resolve source symlinks and check existing hardlinks
-by inode and device. Correct links are skipped, so interrupted builds can be
-rerun. Existing data files are never overwritten, deleted or copied.
-Directory metadata is reused within a run to reduce filesystem load; every file
-is still checked individually. Keep source and target directory trees stable
-during a run. Apply rechecks destination directories before each hardlink.
+Apply resolves source symlinks and uses their metadata to check type and size.
+It prepares safe destination directories and attempts each hardlink directly,
+without first probing the destination file or filesystem compatibility. If a
+destination exists, its inode and device must match the source to be skipped.
+Apply stops on the first invalid entry, missing file, mismatch, conflict or
+hardlink failure, including before later collections. Successful links remain;
+rerun after resolving the problem. Existing data files are never overwritten,
+deleted or copied. Keep directory trees stable during a run; apply rechecks
+destination directories before each link. Verify checks destination types and
+sizes independently of the source and reports all failures.
 
 Progress and summaries go to the log with local timestamps and UTC offsets,
 including logical catalog volume in decimal GB/TB and errors. Exact bytes are
@@ -95,12 +97,12 @@ used internally for file-size checks.
 `datasets` counts distinct parent directories of valid entries per collection;
 different versions count separately. Totals sum across collections.
 Exit `0` means success; non-zero means cancellation, an error or an incomplete
-pool. A successful dry-run describes a plan; use verify to check a built pool.
+pool. `checked` counts source files that passed dry-run; `created` and `existing`
+count apply results. Use verify to check a built pool.
 
 ## Migrate safely
 
-1. Review the config and run a dry-run. Resolve missing files, size mismatches
-   and conflicts.
+1. Review the config and run a dry-run. Resolve missing files and size mismatches.
 2. Run with `--apply`, then verify both collections using the same catalogs.
    Require exit `0` and check CDS/Rook access through the new roots.
 3. Coordinate removal of the old paths only after these checks. Source and

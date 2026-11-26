@@ -5,6 +5,7 @@ import os
 import stat
 
 from .metadata import MetadataCache
+from .source import check_source
 
 LOG = logging.getLogger("c3s-data-pool")
 
@@ -36,18 +37,36 @@ def same_file(first, second):
     return (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
 
 
+def prepare_destination(root, relative):
+    """Create missing parents, rejecting symlinks before descending into them."""
+    current = root
+    for part in (None, *relative.parts[:-1]):
+        if part is not None:
+            current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            # Only the configured root may need ancestors outside the pool.
+            current.mkdir(parents=part is None, exist_ok=True)
+            info = current.lstat()
+        if not stat.S_ISDIR(info.st_mode):
+            raise ValueError(f"destination parent is not a real directory: {current}")
+
+
 def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
     if metadata is None:
         metadata = MetadataCache()
-    destination = paths["target"] / relative
-    try:
-        # Writes retain fresh destination checks; read-only runs reuse directory checks.
-        existing = destination_stat(paths["target"], relative, None if apply else metadata)
-    except (ValueError, NotADirectoryError) as exc:
-        stats.conflicts += 1
-        LOG.error("conflict %s: %s", destination, exc)
+    if build and not apply:
+        check_source(paths, relative, size, stats)
         return
+    destination = paths["target"] / relative
     if not build:
+        try:
+            existing = destination_stat(paths["target"], relative, metadata)
+        except (ValueError, NotADirectoryError) as exc:
+            stats.conflicts += 1
+            LOG.error("conflict %s: %s", destination, exc)
+            return
         if existing is None:
             stats.missing += 1
             LOG.error("missing destination: %s", destination)
@@ -84,28 +103,22 @@ def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
         stats.conflicts += 1
         LOG.error("source resolves to destination; no independent link: %s", source)
         return
-    if existing is not None:
-        if same_file(existing, source_info) and existing.st_size == size:
-            stats.existing += 1
-        else:
-            stats.conflicts += 1
-            LOG.error("conflict: destination is not the expected hardlink: %s", destination)
-        return
-    if not apply:
-        if metadata.target_device(destination.parent) != source_info.st_dev:
-            stats.hardlink_failures += 1
-            LOG.error("hardlink requires the same filesystem: %s -> %s", source, destination)
-        else:
-            stats.planned += 1
-        return
     try:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        # Recheck after mkdir; link itself never replaces an existing name.
-        destination_stat(paths["target"], relative)
+        try:
+            prepare_destination(paths["target"], relative)
+        except (ValueError, NotADirectoryError) as exc:
+            stats.conflicts += 1
+            LOG.error("conflict %s: %s", destination, exc)
+            return
         try:
             os.link(source, destination, follow_symlinks=False)
         except FileExistsError:
-            concurrent = destination_stat(paths["target"], relative)
+            try:
+                concurrent = destination_stat(paths["target"], relative)
+            except (ValueError, NotADirectoryError) as exc:
+                stats.conflicts += 1
+                LOG.error("conflict %s: %s", destination, exc)
+                return
             if (
                 concurrent is not None
                 and same_file(concurrent, source_info)
@@ -113,7 +126,9 @@ def process_row(paths, relative, size, stats, *, build, apply, metadata=None):
             ):
                 stats.existing += 1
                 return
-            raise ValueError("destination appeared and is not the expected hardlink")
+            stats.conflicts += 1
+            LOG.error("conflict: destination is not the expected hardlink: %s", destination)
+            return
         linked = destination.lstat()
         if (
             not stat.S_ISREG(linked.st_mode)

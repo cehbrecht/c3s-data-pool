@@ -13,7 +13,7 @@ from .cache import cache_catalog
 from .metadata import MetadataCache
 from .pool import process_row
 from .progress import Heartbeat
-from .quick import check_source
+from .source import check_source
 from .stats import Stats
 
 LOG = logging.getLogger("c3s-data-pool")
@@ -72,15 +72,14 @@ def process_catalog(
     progress_every,
     cache_dir=None,
     refresh=False,
-    quick=False,
     heartbeat_seconds=15,
     console=None,
 ):
-    if quick and (apply or not build):
-        raise ValueError("quick mode is only available for read-only source scans")
+    dry_run = build and not apply
     stats = Stats()
     dataset_directories = set()
     metadata = MetadataCache()
+    stopped = False
     with Heartbeat(name, interval=heartbeat_seconds, console=console) as heartbeat:
         try:
             heartbeat.update("preparing catalog", paths["catalog"])
@@ -114,12 +113,12 @@ def process_catalog(
                         stats.logical_bytes += size
                         try:
                             heartbeat.update(
-                                "checking source" if quick else "checking file",
+                                "checking source" if dry_run else "checking file",
                                 (paths["source"] if build else paths["target"]) / relative,
                                 completed=stats.files - 1,
                                 total=stats.total_files,
                             )
-                            if quick:
+                            if dry_run:
                                 check_source(paths, relative, size, stats)
                             else:
                                 process_row(
@@ -137,11 +136,19 @@ def process_catalog(
                     heartbeat.update(
                         "reading catalog", completed=stats.files, total=stats.total_files
                     )
+                    if apply and stats.failed:
+                        LOG.error(
+                            "%s: apply stopped at row %d; successful links are retained",
+                            name,
+                            stats.files,
+                        )
+                        stopped = True
+                        break
                     now = time.monotonic()
                     if stats.files % progress_every == 0 or now - last_report >= 30:
                         stats.report(name, "progress")
                         last_report = now
-            if stats.files != stats.total_files:
+            if not stopped and stats.files != stats.total_files:
                 raise ValueError(
                     "catalog file count changed between passes; use a fixed catalog snapshot"
                 )
@@ -161,5 +168,5 @@ def process_catalog(
             completed=stats.files,
             total=stats.total_files,
         )
-    stats.report(name, "quick summary" if quick else "summary")
+    stats.report(name, "summary")
     return stats

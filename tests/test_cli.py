@@ -70,7 +70,7 @@ def test_dry_run_never_writes(pool, monkeypatch, caplog, args):
     with caplog.at_level(logging.INFO):
         assert run(pool, *args) == 0
     assert not pool[2].parent.exists()
-    assert "planned=1" in caplog.text
+    assert "checked=1" in caplog.text
     assert "volume=0.00 GB" in caplog.text
 
 
@@ -465,17 +465,17 @@ def test_readonly_commands_never_prompt(pool, monkeypatch, command):
     assert main([command, "--config", str(pool[0])]) == expected
 
 
-def test_quick_scan_never_checks_destination_or_prompts(pool, monkeypatch, caplog):
+def test_dry_run_never_checks_destination_or_prompts(pool, monkeypatch, caplog):
     from c3s_data_pool import catalog as catalog_module
 
     original_resolve = Path.resolve
 
     def resolve_config_only(path, *args, **kwargs):
-        assert path == pool[0], "quick mode resolved a filesystem root"
+        assert path == pool[0], "dry-run resolved a filesystem root"
         return original_resolve(path, *args, **kwargs)
 
     def forbidden(*args, **kwargs):
-        pytest.fail("quick mode attempted a full check, write or prompt")
+        pytest.fail("dry-run attempted a full check, write or prompt")
 
     monkeypatch.setattr(Path, "resolve", resolve_config_only)
     monkeypatch.setattr(Path, "mkdir", forbidden)
@@ -483,16 +483,16 @@ def test_quick_scan_never_checks_destination_or_prompts(pool, monkeypatch, caplo
     monkeypatch.setattr("builtins.input", forbidden)
     monkeypatch.setattr(os, "link", forbidden)
     with caplog.at_level(logging.INFO):
-        assert main(["build", "--config", str(pool[0]), "--quick"]) == 0
-    assert "mode=quick" in caplog.text
+        assert main(["build", "--config", str(pool[0])]) == 0
+    assert "mode=dry-run" in caplog.text
     assert "checked=1" in caplog.text
-    assert "planned=0" in caplog.text
+    assert "created=0" in caplog.text
     assert "not checked" in caplog.text
     assert not pool[2].exists()
 
 
 @pytest.mark.parametrize("problem", ["missing", "size", "directory", "traversal"])
-def test_quick_scan_reports_failures(pool, problem):
+def test_dry_run_reports_failures(pool, problem):
     source = pool[1] / "model/v20260101/file.nc"
     if problem == "missing":
         source.unlink()
@@ -503,34 +503,110 @@ def test_quick_scan_reports_failures(pool, problem):
         source.mkdir()
     else:
         pool[4]([("../escape", 4, "test")])
-    assert run(pool, "--quick") == 1
+    assert run(pool) == 1
     assert not pool[2].exists()
 
 
 @pytest.mark.parametrize("broken", [False, True])
-def test_quick_source_symlinks(pool, broken):
+def test_dry_run_source_symlinks(pool, broken):
     source = pool[1] / "model/v20260101/file.nc"
     source.unlink()
     real = pool[1] / "real"
     if not broken:
         real.write_bytes(b"data")
     source.symlink_to(real)
-    assert run(pool, "--quick") == (1 if broken else 0)
+    assert run(pool) == (1 if broken else 0)
 
 
-def test_quick_skips_destination_conflicts(pool):
+def test_dry_run_skips_destination_conflicts(pool):
     destination = pool[2] / "model/v20260101/file.nc"
     destination.parent.mkdir(parents=True)
     destination.write_bytes(b"independent copy")
-    assert run(pool, "--quick") == 0
-    assert run(pool) == 1
+    assert run(pool) == 0
+    assert run(pool, "--apply") == 1
 
 
-def test_quick_cannot_apply(pool):
-    with pytest.raises(SystemExit) as error:
-        run(pool, "--quick", "--apply")
-    assert error.value.code == 2
-    assert not pool[2].exists()
+@pytest.mark.parametrize("failure", ["missing", "size", "invalid", "conflict", "link"])
+def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, failure):
+    for name in ("first.nc", "bad.nc", "later.nc"):
+        (pool[1] / name).write_bytes(b"data")
+    bad_path = "../escape.nc" if failure == "invalid" else "bad.nc"
+    pool[4]([("first.nc", 4, "test"), (bad_path, 4, "test"), ("later.nc", 4, "test")])
+    if failure == "missing":
+        (pool[1] / "bad.nc").unlink()
+    elif failure == "size":
+        (pool[1] / "bad.nc").write_bytes(b"wrong size")
+    elif failure == "conflict":
+        pool[2].mkdir(parents=True)
+        (pool[2] / "bad.nc").write_bytes(b"copy")
+    original_link = os.link
+    fail_link = failure == "link"
+
+    def link(source, destination, **kwargs):
+        if fail_link and Path(destination).name == "bad.nc":
+            raise OSError(errno.EIO, "synthetic link failure")
+        return original_link(source, destination, **kwargs)
+
+    monkeypatch.setattr(os, "link", link)
+    with caplog.at_level(logging.INFO):
+        assert run(pool, "--apply") == 1
+    assert (pool[2] / "first.nc").samefile(pool[1] / "first.nc")
+    assert not (pool[2] / "later.nc").exists()
+    assert "apply stopped at row 2" in caplog.text
+    assert "files=2/3 (66.7%)" in caplog.text
+    assert "catalog file count changed" not in caplog.text
+
+    # Resolve the synthetic failure and resume using the previously created link.
+    fail_link = False
+    (pool[1] / "bad.nc").write_bytes(b"data")
+    if failure == "conflict":
+        (pool[2] / "bad.nc").unlink()
+    pool[4]([(name, 4, "test") for name in ("first.nc", "bad.nc", "later.nc")])
+    caplog.clear()
+    with caplog.at_level(logging.INFO):
+        assert run(pool, "--apply") == 0
+    assert "created=2 existing=1" in caplog.text
+    assert run(pool, command="verify") == 0
+
+
+def test_apply_failure_stops_before_later_collections(pool, write_config, caplog):
+    (pool[1] / "model/v20260101/file.nc").unlink()
+    config = tomllib.loads(pool[0].read_text())
+    config["collections"]["later"] = {
+        "catalog": "does-not-exist.csv.gz",
+        "source": "source",
+        "target": "later-target",
+    }
+    write_config(pool[0], config)
+    with caplog.at_level(logging.INFO):
+        assert run(pool, "--apply") == 1
+    assert "remaining collections were not processed" in caplog.text
+    assert "later:" not in caplog.text
+    assert "catalog failed" not in caplog.text
+    assert not (pool[0].parent / "later-target").exists()
+
+
+def test_apply_attempts_link_before_inspecting_existing_destination(pool, monkeypatch):
+    from c3s_data_pool import pool as pool_module
+
+    events = []
+    original_link = os.link
+    original_destination_stat = pool_module.destination_stat
+
+    def link(*args, **kwargs):
+        events.append("link")
+        return original_link(*args, **kwargs)
+
+    def destination_stat(*args, **kwargs):
+        events.append("existing destination check")
+        return original_destination_stat(*args, **kwargs)
+
+    monkeypatch.setattr(os, "link", link)
+    monkeypatch.setattr(pool_module, "destination_stat", destination_stat)
+    assert run(pool, "--apply") == 0
+    assert events == ["link"]
+    assert run(pool, "--apply") == 0
+    assert events == ["link", "link", "existing destination check"]
 
 
 @pytest.mark.parametrize("interval", ["0", "-1"])
@@ -573,7 +649,6 @@ def test_cli_progress_bar_on_real_terminal(pool):
                 "build",
                 "--config",
                 str(pool[0]),
-                "--quick",
                 "--log-file",
                 str(log_file),
             ],
@@ -601,7 +676,7 @@ def test_cli_progress_bar_on_real_terminal(pool):
         assert "\r" in console
         assert "[####################]" in console
         assert "100.0% 1/1" in console
-        assert "Quick scan completed" in console
+        assert "Dry-run completed" in console
         assert "INFO" not in console
         assert "checked=1" in log_file.read_text()
     finally:
