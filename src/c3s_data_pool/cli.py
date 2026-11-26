@@ -39,6 +39,16 @@ def main(argv=None):
         sub.add_argument("--config", required=True, type=Path)
         sub.add_argument("--collection", action="append", help="select a collection (repeatable)")
         sub.add_argument("--progress-every", type=positive_int, default=10000, metavar="ROWS")
+        sub.add_argument(
+            "--cache-dir",
+            type=Path,
+            help="local catalog cache (default: ~/.cache/c3s-data-pool, respecting XDG_CACHE_HOME)",
+        )
+        sub.add_argument(
+            "--refresh-catalog",
+            action="store_true",
+            help="download a fresh copy of remote catalogs",
+        )
         if command == "build":
             mode = sub.add_mutually_exclusive_group()
             mode.add_argument(
@@ -75,7 +85,13 @@ def main(argv=None):
     try:
         for name, paths in collections:
             stats = process_catalog(
-                name, paths, build=build, apply=apply, progress_every=args.progress_every
+                name,
+                paths,
+                build=build,
+                apply=apply,
+                progress_every=args.progress_every,
+                cache_dir=args.cache_dir,
+                refresh=args.refresh_catalog,
             )
             failed |= stats.failed
             for key, value in vars(stats).items():

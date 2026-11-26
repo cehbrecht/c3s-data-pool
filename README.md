@@ -35,6 +35,13 @@ For a migration, pin URLs to a Git commit or keep fixed local catalog snapshots.
 Each CSV row needs `path`, `size` (bytes) and `mip_era`. Paths are relative to the
 source/target roots and include the dataset version; `mip_era` is not prepended.
 Catalogs are streamed row by row.
+Each collection is read once to count file entries, then again to process them;
+progress shows processed/total files and a percentage. Remote catalogs are
+downloaded once and reused from `~/.cache/c3s-data-pool` (or
+`$XDG_CACHE_HOME/c3s-data-pool`). Both passes use the same open local snapshot.
+Use `--cache-dir PATH` to choose a writable local disk and `--refresh-catalog` to
+replace cached snapshots. Failed downloads leave the previous cache intact and
+return an error. Local catalogs are read directly.
 
 ## Build and verify
 
@@ -42,7 +49,7 @@ Run the CLI directly. Without activating Conda, use
 `.conda-env/bin/c3s-data-pool` instead of `c3s-data-pool` below.
 
 ```sh
-# Inspect first: dry-run is the default and creates nothing.
+# Inspect first: dry-run is the default; only the local catalog cache is written.
 c3s-data-pool build --config config/dkrz.toml
 
 # Review the displayed roots and answer yes to create hardlinks.
@@ -54,6 +61,8 @@ c3s-data-pool verify --config config/dkrz.toml
 
 Add `--collection c3s-cmip6` or `--collection c3s-cmip6-decadal` to select a
 collection. Apply requires `y` or `yes`; Enter or unavailable stdin cancels.
+Dry-run never creates data pool directories or hardlinks. Its catalog cache must
+be writable; keep it on the VM's local disk rather than read-only Lustre.
 
 Builds check source sizes, resolve source symlinks and check existing hardlinks
 by inode and device. Correct links are skipped, so interrupted builds can be

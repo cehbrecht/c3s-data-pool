@@ -2,15 +2,14 @@
 
 import csv
 import gzip
-import io
 import logging
 import time
 import zlib
 from contextlib import contextmanager
 from http.client import HTTPException
 from pathlib import Path, PurePosixPath
-from urllib.request import urlopen
 
+from .cache import cache_catalog
 from .pool import process_row
 from .stats import Stats
 
@@ -19,16 +18,10 @@ LOG = logging.getLogger("c3s-data-pool")
 
 @contextmanager
 def open_catalog(location):
-    """Stream local CSV/gzip or HTTPS gzip data without a disk cache."""
-    if isinstance(location, str) and location.startswith("https://"):
-        with urlopen(location, timeout=30) as response:
-            with gzip.GzipFile(fileobj=response) as compressed:
-                with io.TextIOWrapper(compressed, encoding="utf-8-sig", newline="") as stream:
-                    yield stream
-    else:
-        opener = gzip.open if Path(location).suffix == ".gz" else open
-        with opener(location, "rt", encoding="utf-8-sig", newline="") as stream:
-            yield stream
+    """Open a local catalog, including a cached remote snapshot."""
+    opener = gzip.open if Path(location).suffix == ".gz" else open
+    with opener(location, "rt", encoding="utf-8-sig", newline="") as stream:
+        yield stream
 
 
 def relative_path(value):
@@ -41,19 +34,47 @@ def relative_path(value):
     return Path(*path.parts)
 
 
-def process_catalog(name, paths, *, build, apply, progress_every):
+def catalog_reader(stream):
+    reader = csv.DictReader(stream, strict=True)
+    required = {"path", "size", "mip_era"}
+    if not reader.fieldnames or not required.issubset(reader.fieldnames):
+        raise ValueError("catalog requires path, size and mip_era columns")
+    if len(set(reader.fieldnames)) != len(reader.fieldnames):
+        raise ValueError("catalog has duplicate column names")
+    return reader
+
+
+def count_catalog_files(name, stream):
+    """Count CSV records, including quoted multiline records, without file checks."""
+    LOG.info("%s: counting catalog files", name)
+    count = 0
+    last_report = time.monotonic()
+    for count, _ in enumerate(catalog_reader(stream), start=1):
+        now = time.monotonic()
+        if now - last_report >= 30:
+            LOG.info("%s: counted %d catalog files so far", name, count)
+            last_report = now
+    if count == 0:
+        raise ValueError("catalog has no file rows")
+    LOG.info("%s: catalog contains %d files", name, count)
+    return count
+
+
+def process_catalog(name, paths, *, build, apply, progress_every, cache_dir=None, refresh=False):
     stats = Stats()
     dataset_directories = set()
-    last_report = time.monotonic()
     try:
-        with open_catalog(paths["catalog"]) as stream:
-            reader = csv.DictReader(stream, strict=True)
-            required = {"path", "size", "mip_era"}
-            if not reader.fieldnames or not required.issubset(reader.fieldnames):
-                raise ValueError("catalog requires path, size and mip_era columns")
-            if len(set(reader.fieldnames)) != len(reader.fieldnames):
-                raise ValueError("catalog has duplicate column names")
-            for row in reader:
+        location = cache_catalog(paths["catalog"], cache_dir, refresh=refresh)
+        with open_catalog(location) as stream:
+            stats.total_files = count_catalog_files(name, stream)
+            stats.report(name, "progress")
+            stream.seek(0)
+            last_report = time.monotonic()
+            for row in catalog_reader(stream):
+                if stats.files == stats.total_files:
+                    raise ValueError(
+                        "catalog file count changed between passes; use a fixed catalog snapshot"
+                    )
                 stats.files += 1
                 try:
                     if None in row or any(value is None for value in row.values()):
@@ -78,8 +99,10 @@ def process_catalog(name, paths, *, build, apply, progress_every):
                 if stats.files % progress_every == 0 or now - last_report >= 30:
                     stats.report(name, "progress")
                     last_report = now
-        if stats.files == 0:
-            raise ValueError("catalog has no file rows")
+        if stats.files != stats.total_files:
+            raise ValueError(
+                "catalog file count changed between passes; use a fixed catalog snapshot"
+            )
     except (
         OSError,
         EOFError,

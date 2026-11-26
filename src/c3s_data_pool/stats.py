@@ -9,6 +9,7 @@ LOG = logging.getLogger("c3s-data-pool")
 @dataclass
 class Stats:
     files: int = 0
+    total_files: int = 0
     datasets: int = 0
     logical_bytes: int = 0
     created: int = 0
@@ -40,13 +41,16 @@ class Stats:
         counts = " ".join(
             f"{key}={value}"
             for key, value in vars(self).items()
-            if key not in {"files", "datasets", "logical_bytes"}
+            if key not in {"files", "total_files", "datasets", "logical_bytes"}
         )
+        progress = str(self.files)
+        if self.total_files:
+            progress += f"/{self.total_files} ({100 * self.files / self.total_files:.1f}%)"
         LOG.info(
-            "%s %s: files=%d datasets=%d volume=%.2f %s %s",
+            "%s %s: files=%s datasets=%d volume=%.2f %s %s",
             name,
             label,
-            self.files,
+            progress,
             self.datasets,
             self.logical_bytes / divisor,
             unit,

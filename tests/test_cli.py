@@ -11,7 +11,7 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-from c3s_data_pool import catalog as catalog_module
+from c3s_data_pool import cache as cache_module
 from c3s_data_pool.cli import main
 from c3s_data_pool.config import tomllib
 
@@ -298,6 +298,7 @@ def test_zero_size_file(pool):
 
 @pytest.fixture
 def remote_catalog(pool, monkeypatch, write_config):
+    monkeypatch.setenv("XDG_CACHE_HOME", str(pool[0].parent / "cache-root"))
     url = "https://example.test/catalog.csv.gz?version=pinned"
     config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["catalog"] = url
@@ -305,6 +306,8 @@ def remote_catalog(pool, monkeypatch, write_config):
     responses = []
 
     class StreamingResponse(io.BytesIO):
+        headers = {}
+
         def read(self, size=-1):
             assert size >= 0, "remote catalog must not be read in one unbounded request"
             return super().read(size)
@@ -316,20 +319,27 @@ def remote_catalog(pool, monkeypatch, write_config):
         responses.append(response)
         return response
 
-    monkeypatch.setattr(catalog_module, "urlopen", fetch)
+    monkeypatch.setattr(cache_module, "urlopen", fetch)
     return responses
 
 
-def test_remote_dry_run_never_writes(pool, remote_catalog, monkeypatch):
-    def forbidden(*args, **kwargs):
-        pytest.fail("remote dry-run attempted a write")
+def test_remote_dry_run_writes_only_cache(pool, remote_catalog, monkeypatch):
+    original_mkdir = Path.mkdir
 
-    monkeypatch.setattr(Path, "mkdir", forbidden)
+    def cache_mkdir(path, *args, **kwargs):
+        cache_root = pool[0].parent / "cache-root"
+        assert path == cache_root or cache_root in path.parents
+        return original_mkdir(path, *args, **kwargs)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("remote dry-run attempted a hardlink")
+
+    monkeypatch.setattr(Path, "mkdir", cache_mkdir)
     monkeypatch.setattr(os, "link", forbidden)
     assert run(pool) == 0
     assert not pool[2].parent.exists()
     assert len(remote_catalog) == 1
-    assert remote_catalog[0].closed
+    assert all(response.closed for response in remote_catalog)
 
 
 def test_remote_build_repeat_and_verify_without_source(pool, remote_catalog):
@@ -339,8 +349,20 @@ def test_remote_build_repeat_and_verify_without_source(pool, remote_catalog):
     assert source.samefile(pool[2] / "model/v20260101/file.nc")
     source.unlink()
     assert run(pool, command="verify") == 0
-    assert len(remote_catalog) == 3
+    assert len(remote_catalog) == 1
     assert all(response.closed for response in remote_catalog)
+
+
+def test_cli_cache_directory_and_refresh(pool, remote_catalog):
+    chosen = pool[0].parent / "chosen-cache"
+    assert run(pool, "--cache-dir", str(chosen)) == 0
+    assert len(list(chosen.glob("*.csv.gz"))) == 1
+    assert run(pool, "--cache-dir", str(chosen)) == 0
+    assert len(remote_catalog) == 1
+    assert run(pool, "--cache-dir", str(chosen), "--refresh-catalog") == 0
+    assert len(remote_catalog) == 2
+    assert not (pool[0].parent / "cache-root").exists()
+    assert not pool[2].exists()
 
 
 @pytest.mark.parametrize(
@@ -356,7 +378,7 @@ def test_remote_failure_returns_nonzero(pool, remote_catalog, monkeypatch, caplo
     def fail(*args, **kwargs):
         raise error
 
-    monkeypatch.setattr(catalog_module, "urlopen", fail)
+    monkeypatch.setattr(cache_module, "urlopen", fail)
     assert run(pool) == 1
     assert "catalog failed" in caplog.text
     assert not pool[2].exists()
