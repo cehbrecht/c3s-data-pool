@@ -550,7 +550,7 @@ def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, 
 
     monkeypatch.setattr(os, "link", link)
     with caplog.at_level(logging.INFO):
-        assert run(pool, "--apply", "--method", method) == 1
+        assert run(pool, "--apply", f"--{method}") == 1
     assert (pool[2] / "first.nc").samefile(pool[1] / "first.nc") == (method == "hardlink")
     assert not (pool[2] / "later.nc").exists()
     assert "apply stopped at row 2" in caplog.text
@@ -565,7 +565,7 @@ def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, 
     pool[4]([(name, 4, "test") for name in ("first.nc", "bad.nc", "later.nc")])
     caplog.clear()
     with caplog.at_level(logging.INFO):
-        assert run(pool, "--apply", "--method", method) == 0
+        assert run(pool, "--apply", f"--{method}") == 0
     assert "created=2 existing=1" in caplog.text
     assert run(pool, command="verify") == 0
 

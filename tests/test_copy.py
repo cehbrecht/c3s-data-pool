@@ -41,7 +41,7 @@ def copy_pool(tmp_path, write_config, request):
 
 
 def run(pool, *args, method="copy", command="build"):
-    options = ["--method", method] if command == "build" and method is not None else []
+    options = [f"--{method}"] if command == "build" and method is not None else []
     with patch("builtins.input", return_value="yes"):
         return main([command, "--config", str(pool[0]), *options, *args])
 
@@ -191,6 +191,14 @@ def test_copy_publish_never_overwrites_a_concurrent_destination(copy_pool, monke
 
 def test_copy_requires_confirmation(copy_pool, monkeypatch, capsys):
     monkeypatch.setattr("builtins.input", lambda: "no")
-    assert main(["build", "--config", str(copy_pool[0]), "--method", "copy", "--apply"]) == 1
+    assert main(["build", "--config", str(copy_pool[0]), "--copy", "--apply"]) == 1
     assert "independent file copies" in capsys.readouterr().err
+    assert not copy_pool[2].parent.exists()
+
+
+@pytest.mark.parametrize("flags", [("--copy", "--hardlink"), ("--hardlink", "--copy")])
+def test_copy_and_hardlink_are_mutually_exclusive(copy_pool, flags):
+    with pytest.raises(SystemExit) as error:
+        run(copy_pool, *flags, method=None)
+    assert error.value.code == 2
     assert not copy_pool[2].parent.exists()

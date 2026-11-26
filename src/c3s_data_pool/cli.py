@@ -64,11 +64,21 @@ def main(argv=None):
             help="download a fresh copy of remote catalogs",
         )
         if command == "build":
-            sub.add_argument(
-                "--method",
-                choices=("hardlink", "copy"),
+            method = sub.add_mutually_exclusive_group()
+            method.add_argument(
+                "--hardlink",
+                dest="method",
+                action="store_const",
+                const="hardlink",
                 default="hardlink",
-                help="retention method (default: hardlink); copy duplicates file contents",
+                help="retain files using hardlinks (default)",
+            )
+            method.add_argument(
+                "--copy",
+                dest="method",
+                action="store_const",
+                const="copy",
+                help="retain independent copies of file contents",
             )
             mode = sub.add_mutually_exclusive_group()
             mode.add_argument(

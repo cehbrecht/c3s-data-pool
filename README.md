@@ -60,7 +60,7 @@ c3s-data-pool build --config config/rook.toml --log-file logs/cmip6-dry-run.log
 c3s-data-pool build --config config/dkrz.toml --apply
 
 # Explicit alternative: copy file contents (requires additional storage/quota).
-c3s-data-pool build --config config/dkrz.toml --method copy --apply
+c3s-data-pool build --config config/dkrz.toml --copy --apply
 
 # Check retained files, independently of the original source pool.
 c3s-data-pool verify --config config/dkrz.toml
@@ -68,7 +68,8 @@ c3s-data-pool verify --config config/dkrz.toml
 
 Add `--collection c3s-cmip6` or `--collection c3s-cmip6-decadal` to select a
 collection. Apply requires `y` or `yes`; Enter or unavailable stdin cancels.
-`--method hardlink` is the default and can also be specified explicitly. There
+`--hardlink` is the default and can also be specified explicitly. `--copy` selects
+independent copies; the two flags are mutually exclusive. There
 is no automatic fallback to copying when a hardlink fails.
 Dry-run never creates data pool directories or hardlinks. Keep its writable cache
 and log on the VM's local disk rather than read-only Lustre.
@@ -89,7 +90,7 @@ requests. Heartbeat log entries every 15 seconds include the current file and
 elapsed time; use `--heartbeat-seconds 5` for more frequent log entries.
 
 Apply resolves source symlinks and uses their metadata to check type and size.
-With `--method hardlink`, it prepares safe destination directories and attempts each hardlink directly,
+With `--hardlink`, it prepares safe destination directories and attempts each hardlink directly,
 without first probing the destination file or filesystem compatibility. If a
 destination exists, its inode and device must match the source to be skipped.
 Apply stops on the first invalid entry, missing file, mismatch, conflict or

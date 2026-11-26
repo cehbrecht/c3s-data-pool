@@ -93,7 +93,7 @@ def test_both_collections_survive_source_removal(dkrz_pool, method):
     )
     assert all(not target.exists() for target in targets.values())
 
-    build = cli(config, "build", "--method", method, "--apply")
+    build = cli(config, "build", f"--{method}", "--apply")
     assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=4" in build
     identities = {}
     for name, rows in files.items():
@@ -107,7 +107,7 @@ def test_both_collections_survive_source_removal(dkrz_pool, method):
             row["path"] for row in rows
         }
 
-    repeated = cli(config, "build", "--method", method, "--apply")
+    repeated = cli(config, "build", f"--{method}", "--apply")
     assert "files=4/4 (100.0%) datasets=4 volume=0.00 GB created=0 existing=4" in repeated
     assert all(
         (path.stat().st_dev, path.stat().st_ino) == identity
