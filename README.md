@@ -6,7 +6,7 @@ also works with other catalogs using the same schema.
 
 ## Install
 
-Requires Conda and Python 3.10 or newer. From this checkout:
+Requires Conda and Python 3.12 or newer. From this checkout:
 
 ```sh
 make env
@@ -26,7 +26,7 @@ Relative local paths are resolved from the config file's directory. On Rook VMs,
 use [config/rook.toml](config/rook.toml), with `/mnt/lustre/work/...` paths. Run builds with `--apply` on a host
 with writable Lustre access; dry-run and verify work on read-only mounts.
 
-TOML uses Python's built-in reader on 3.11+ (`tomli` on 3.10).
+TOML uses Python's built-in reader; the CLI has no third-party runtime dependencies.
 
 Check catalog versions in the
 [main Intake catalog](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s.yaml).

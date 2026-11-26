@@ -7,6 +7,7 @@ import os
 import select
 import subprocess
 import sys
+import tomllib
 from http.client import IncompleteRead
 from pathlib import Path
 from unittest.mock import patch
@@ -16,7 +17,6 @@ import pytest
 
 from c3s_data_pool import cache as cache_module
 from c3s_data_pool.cli import main
-from c3s_data_pool.config import tomllib
 
 
 @pytest.fixture
@@ -133,8 +133,8 @@ def test_conflicts_never_overwritten(pool, kind):
     ["../escape", "/absolute", "a/../../escape", "a/./b", "a//b", "a/", "", "a\\b", "a\x00b"],
 )
 def test_invalid_paths(pool, path):
-    # Write these deliberately invalid fields literally: Python 3.10's CSV
-    # writer rejects NUL bytes before the catalog reader can inspect them.
+    # Write invalid fields literally so fixture generation does not reject or
+    # normalize them before the catalog reader can inspect them.
     with gzip.open(pool[3], "wt", newline="") as stream:
         stream.write(f"path,size,mip_era\n{path},0,other\n")
     assert run(pool, "--apply") == 1

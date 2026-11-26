@@ -1,12 +1,8 @@
 """Load and validate collection configuration and local roots."""
 
+import tomllib
 from pathlib import Path
 from urllib.parse import urlsplit
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python 3.10
-    import tomli as tomllib
 
 
 def catalog_location(value, directory):
