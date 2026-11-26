@@ -1,0 +1,3 @@
+path,size,mip_era,activity_id,institution_id,source_id,experiment_id,member_id,table_id,variable_id,grid_label,version
+CMIP/MPI-M/MPI-ESM1-2-HR/historical/r1i1p1f1/Amon/tas/gn/v20190710/tas_Amon_MPI-ESM1-2-HR_historical_r1i1p1f1_gn_185001-189912.nc,16,CMIP6,CMIP,MPI-M,MPI-ESM1-2-HR,historical,r1i1p1f1,Amon,tas,gn,v20190710
+CMIP/MPI-M/MPI-ESM1-2-HR/historical/r1i1p1f1/Amon/pr/gn/v20190710/pr_Amon_MPI-ESM1-2-HR_historical_r1i1p1f1_gn_185001-189912.nc,24,CMIP6,CMIP,MPI-M,MPI-ESM1-2-HR,historical,r1i1p1f1,Amon,pr,gn,v20190710

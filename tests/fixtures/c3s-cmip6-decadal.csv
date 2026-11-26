@@ -1,0 +1,3 @@
+path,size,mip_era,activity_id,institution_id,source_id,experiment_id,member_id,table_id,variable_id,grid_label,version
+DCPP/MPI-M/MPI-ESM1-2-HR/dcppA-hindcast/s1960-r1i1p1f1/Amon/tas/gn/v20200101/tas_Amon_MPI-ESM1-2-HR_dcppA-hindcast_s1960-r1i1p1f1_gn_196011-197012.nc,32,CMIP6,DCPP,MPI-M,MPI-ESM1-2-HR,dcppA-hindcast,s1960-r1i1p1f1,Amon,tas,gn,v20200101
+DCPP/MPI-M/MPI-ESM1-2-HR/dcppA-hindcast/s1961-r1i1p1f1/Amon/tas/gn/v20200101/tas_Amon_MPI-ESM1-2-HR_dcppA-hindcast_s1961-r1i1p1f1_gn_196111-197112.nc,48,CMIP6,DCPP,MPI-M,MPI-ESM1-2-HR,dcppA-hindcast,s1961-r1i1p1f1,Amon,tas,gn,v20200101
