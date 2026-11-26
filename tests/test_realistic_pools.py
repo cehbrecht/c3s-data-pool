@@ -8,14 +8,13 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 COLLECTIONS = ("c3s-cmip6", "c3s-cmip6-decadal")
 
 
 @pytest.fixture(params=[".csv", ".csv.gz"])
-def dkrz_pool(tmp_path, request):
+def dkrz_pool(tmp_path, request, write_config):
     source = tmp_path / "work/ik1017/CMIP6/data/CMIP6"
     targets = {
         "c3s-cmip6": tmp_path / "work/ik1017/C3SCMIP6/data/c3s-cmip6",
@@ -50,8 +49,8 @@ def dkrz_pool(tmp_path, request):
             else:
                 path.write_bytes(payload)
             originals.append(path)
-    config = tmp_path / "dkrz.yml"
-    config.write_text(yaml.safe_dump({"collections": collections}))
+    config = tmp_path / "dkrz.toml"
+    write_config(config, {"collections": collections})
     return config, source, targets, files, originals
 
 

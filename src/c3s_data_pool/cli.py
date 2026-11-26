@@ -5,8 +5,6 @@ import logging
 import sys
 from pathlib import Path
 
-import yaml
-
 from .catalog import process_catalog
 from .config import load_config
 from .stats import Stats
@@ -59,7 +57,7 @@ def main(argv=None):
     apply = build and args.apply
     try:
         collections = load_config(args.config, args.collection, build)
-    except (OSError, ValueError, RuntimeError, yaml.YAMLError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         LOG.error("configuration failed: %s", exc)
         return 2
     LOG.info("mode=%s", "apply" if apply else ("dry-run" if build else "verify"))

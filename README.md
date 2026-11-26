@@ -16,15 +16,17 @@ conda activate ./.conda-env
 
 ## Configure
 
-Edit [config/dkrz.yml](config/dkrz.yml), which includes both C3S collections:
+Edit [config/dkrz.toml](config/dkrz.toml), which includes both C3S collections:
 
 - `catalog`: a direct HTTPS `.csv.gz` URL, or a local `.csv.gz` / `.csv` file.
 - `source`: the existing data pool root.
 - `target`: the new pool root, outside the old pool's cleanup scope.
 
 Relative local paths are resolved from the config file's directory. On Rook VMs,
-replace `/work/...` with `/mnt/lustre/work/...`. Run builds with `--apply` on a host
+use [config/rook.toml](config/rook.toml), with `/mnt/lustre/work/...` paths. Run builds with `--apply` on a host
 with writable Lustre access; dry-run and verify work on read-only mounts.
+
+TOML uses Python's built-in reader on 3.11+ (`tomli` on 3.10).
 
 Check catalog versions in the
 [main Intake catalog](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s.yaml).
@@ -41,13 +43,13 @@ Run the CLI directly. Without activating Conda, use
 
 ```sh
 # Inspect first: dry-run is the default and creates nothing.
-c3s-data-pool build --config config/dkrz.yml
+c3s-data-pool build --config config/dkrz.toml
 
 # Review the displayed roots and answer yes to create hardlinks.
-c3s-data-pool build --config config/dkrz.yml --apply
+c3s-data-pool build --config config/dkrz.toml --apply
 
 # Check retained files, independently of the original source pool.
-c3s-data-pool verify --config config/dkrz.yml
+c3s-data-pool verify --config config/dkrz.toml
 ```
 
 Add `--collection c3s-cmip6` or `--collection c3s-cmip6-decadal` to select a

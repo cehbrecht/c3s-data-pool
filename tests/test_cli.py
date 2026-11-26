@@ -10,31 +10,30 @@ from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
 import pytest
-import yaml
 
 from c3s_data_pool import catalog as catalog_module
 from c3s_data_pool.cli import main
+from c3s_data_pool.config import tomllib
 
 
 @pytest.fixture
-def pool(tmp_path):
+def pool(tmp_path, write_config):
     source = tmp_path / "source"
     source.mkdir()
     target = tmp_path / "not-created" / "pool"
     catalog = tmp_path / "files.csv.gz"
-    config = tmp_path / "config.yml"
-    config.write_text(
-        yaml.safe_dump(
-            {
-                "collections": {
-                    "test": {
-                        "source": "source",
-                        "target": "not-created/pool",
-                        "catalog": "files.csv.gz",
-                    }
+    config = tmp_path / "config.toml"
+    write_config(
+        config,
+        {
+            "collections": {
+                "test": {
+                    "source": "source",
+                    "target": "not-created/pool",
+                    "catalog": "files.csv.gz",
                 }
             }
-        )
+        },
     )
 
     def write(rows=None):
@@ -84,13 +83,13 @@ def test_hardlink_and_repeated_build(pool, caplog):
     assert "existing=1" in caplog.text
 
 
-def test_verify_without_source(pool):
+def test_verify_without_source(pool, write_config):
     assert run(pool, "--apply") == 0
     (pool[1] / "model/v20260101/file.nc").unlink()
     # Verification also accepts a configuration without any source key.
-    config = yaml.safe_load(pool[0].read_text())
+    config = tomllib.loads(pool[0].read_text())
     del config["collections"]["test"]["source"]
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool, command="verify") == 0
 
 
@@ -217,14 +216,14 @@ def test_truncated_gzip(pool):
     assert run(pool) == 1
 
 
-def test_collection_selection_and_progress(pool, caplog):
-    config = yaml.safe_load(pool[0].read_text())
+def test_collection_selection_and_progress(pool, caplog, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["unused"] = {
         "catalog": "missing.csv.gz",
         "target": "other",
         "source": "source",
     }
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     with caplog.at_level(logging.INFO):
         assert run(pool, "--collection", "test", "--progress-every", "1") == 0
     assert "test progress:" in caplog.text
@@ -232,10 +231,10 @@ def test_collection_selection_and_progress(pool, caplog):
     assert run(pool) == 1
 
 
-def test_same_roots_rejected(pool):
-    config = yaml.safe_load(pool[0].read_text())
+def test_same_roots_rejected(pool, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["target"] = "source"
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool, "--apply") == 2
 
 
@@ -286,7 +285,7 @@ def test_readonly_directory_dry_run(pool):
 
 
 def test_invalid_config(pool):
-    pool[0].write_text("collections: []\n")
+    pool[0].write_text("collections = []\n")
     assert run(pool) == 2
 
 
@@ -298,11 +297,11 @@ def test_zero_size_file(pool):
 
 
 @pytest.fixture
-def remote_catalog(pool, monkeypatch):
+def remote_catalog(pool, monkeypatch, write_config):
     url = "https://example.test/catalog.csv.gz?version=pinned"
-    config = yaml.safe_load(pool[0].read_text())
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["catalog"] = url
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     responses = []
 
     class StreamingResponse(io.BytesIO):
@@ -386,17 +385,17 @@ def test_remote_invalid_catalog_closes_response(pool, remote_catalog, contents):
         "https://example.test/catalog.csv",
     ],
 )
-def test_invalid_catalog_url(pool, location):
-    config = yaml.safe_load(pool[0].read_text())
+def test_invalid_catalog_url(pool, location, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["catalog"] = location
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool) == 2
 
 
-def test_absolute_local_catalog(pool):
-    config = yaml.safe_load(pool[0].read_text())
+def test_absolute_local_catalog(pool, write_config):
+    config = tomllib.loads(pool[0].read_text())
     config["collections"]["test"]["catalog"] = str(pool[3])
-    pool[0].write_text(yaml.safe_dump(config))
+    write_config(pool[0], config)
     assert run(pool) == 0
 
 

@@ -3,7 +3,10 @@
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import yaml
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 
 def catalog_location(value, directory):
@@ -23,8 +26,10 @@ def catalog_location(value, directory):
 
 def load_config(filename, selected, build):
     config_path = Path(filename).resolve()
-    with config_path.open(encoding="utf-8") as stream:
-        config = yaml.safe_load(stream)
+    if config_path.suffix != ".toml":
+        raise ValueError("config must be a .toml file")
+    with config_path.open("rb") as stream:
+        config = tomllib.load(stream)
     collections = config.get("collections") if isinstance(config, dict) else None
     if not isinstance(collections, dict) or not collections:
         raise ValueError("configuration requires a non-empty collections mapping")
