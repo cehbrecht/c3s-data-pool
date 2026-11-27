@@ -68,6 +68,14 @@ c3s-data-pool build --config config/dkrz.toml --copy --apply --batch \
 
 Heartbeat log entries every 15 seconds include the current file and
 elapsed time; use `--heartbeat-seconds 5` for more frequent log entries.
+They show the current versioned dataset directory, `dataset_files=processed/total`
+within that directory, and `datasets=encountered/total` across the catalog.
+Dataset totals are counted from valid CSV entries during the existing counting
+pass, without extra filesystem requests. Unsorted entries and duplicates are
+supported. Counts track processed entries, including failed checks, rather than
+successful datasets; error counters show failures. The current filename and
+stage remain visible to diagnose stalls, and timed heartbeats continue while a
+single file operation is blocked.
 
 Apply resolves source symlinks and uses their metadata to check type and size.
 With `--hardlink`, it prepares safe destination directories and attempts each hardlink directly,
