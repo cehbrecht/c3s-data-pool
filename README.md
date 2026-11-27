@@ -125,7 +125,7 @@ Exit `0` means success; non-zero means cancellation, an error or an incomplete
 pool. `checked` counts source files that passed dry-run; `created` and `existing`
 count apply results. Use verify to check a built pool.
 
-## Copy on Levante with Slurm
+## Batch jobs on Levante
 
 From the repository root on a login node, submit the
 [batch script](scripts/levante-copy.sbatch):
@@ -154,6 +154,22 @@ grep ' ERROR ' logs/c3s-cmip6-copy-JOB_ID.log
 To copy decadal instead, append `c3s-cmip6-decadal` to the submission command.
 Resubmit after an interruption to skip existing files with matching sizes. After
 a successful build, run `verify` for that collection before removing sources.
+
+For hardlinks, provide a config and collection explicitly:
+
+```sh
+sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
+tail -F logs/c3s-hardlink-JOB_ID.log
+```
+
+The hardlink script also requests one CPU for 24 hours under `bk1088` and
+automatically confirms apply. Slurm output goes to `c3s-hardlink-JOB_ID.out`.
+Use your own TOML configs and collection names for CMIP5, CORDEX or Atlas.
+To retain only catalog-listed files, choose a separate, empty target on the same
+filesystem. The script creates hardlinks and leaves all source files and any
+existing target files untouched; it does not prune an existing pool. Your account
+must have permission to create the source hardlinks and write the target.
+Verify the new pool and switch consumers before separately retiring the old pool.
 
 ## Migrate safely
 
