@@ -1,5 +1,6 @@
 import io
 import logging
+import sys
 
 import pytest
 
@@ -50,3 +51,35 @@ def test_explicit_log_file_appends(tmp_path):
             logging.getLogger("c3s-data-pool").info("run %d", number)
     contents = path.read_text()
     assert contents.count("run 1") == contents.count("run 2") == 1
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("mode", ["verbose", "silent"])
+def test_explicit_console_modes_keep_file_logs(tmp_path, monkeypatch, capsys, terminal, mode):
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: terminal)
+    path = tmp_path / "run.log"
+    logger = logging.getLogger("c3s-data-pool")
+    with RunOutput(path, "build", **{mode: True}) as output:
+        assert output.console is None
+        logger.info("detailed progress")
+        logger.error("synthetic failure")
+        output.finish(1, "Apply")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    if mode == "silent":
+        assert captured.err == ""
+    else:
+        assert "INFO detailed progress" in captured.err
+        assert "ERROR synthetic failure" in captured.err
+        assert "exit 1" in captured.err
+        assert "\r" not in captured.err
+    assert "INFO detailed progress" in path.read_text()
+    assert "ERROR synthetic failure" in path.read_text()
+    assert output.stream_handler not in logger.handlers
+
+
+def test_verbose_handler_is_removed_after_failure(tmp_path):
+    output = RunOutput(tmp_path / "run.log", "build", verbose=True)
+    with pytest.raises(RuntimeError), output:
+        raise RuntimeError("failed")
+    assert output.stream_handler not in output.logger.handlers

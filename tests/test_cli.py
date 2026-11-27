@@ -7,6 +7,7 @@ import os
 import select
 import subprocess
 import sys
+import time
 import tomllib
 from http.client import IncompleteRead
 from pathlib import Path
@@ -443,6 +444,69 @@ def test_declined_apply_does_not_read_catalog_or_write(pool, remote_catalog, mon
     assert not remote_catalog
 
 
+@pytest.mark.parametrize("method", ["hardlink", "copy"])
+def test_batch_apply_does_not_prompt(pool, monkeypatch, capsys, method):
+    def forbidden():
+        pytest.fail("batch mode requested confirmation")
+
+    monkeypatch.setattr("builtins.input", forbidden)
+    assert main(["build", "--config", str(pool[0]), "--apply", f"--{method}", "--batch"]) == 0
+    assert (pool[2] / "model/v20260101/file.nc").read_bytes() == b"data"
+    assert capsys.readouterr().err == ""
+
+
+def test_batch_without_apply_remains_dry_run(pool, monkeypatch, capsys):
+    def forbidden():
+        pytest.fail("batch dry-run requested confirmation")
+
+    monkeypatch.setattr("builtins.input", forbidden)
+    assert main(["build", "--config", str(pool[0]), "--batch", "--verbose"]) == 0
+    assert not pool[2].parent.exists()
+    assert "mode=dry-run" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("command", ["build", "verify"])
+def test_verbose_and_silent_are_mutually_exclusive(pool, command):
+    with pytest.raises(SystemExit) as error:
+        main([command, "--config", str(pool[0]), "--verbose", "--silent"])
+    assert error.value.code == 2
+
+
+@pytest.mark.parametrize("command", ["build", "verify"])
+@pytest.mark.parametrize(
+    "flags,verbose",
+    [
+        ([], True),
+        (["--verbose"], True),
+        (["--silent"], False),
+        (["--batch"], False),
+        (["--batch", "--verbose"], True),
+        (["--verbose", "--batch"], True),
+        (["--batch", "--silent"], False),
+    ],
+)
+def test_console_defaults_and_explicit_overrides(pool, capsys, command, flags, verbose):
+    log_file = pool[0].parent / "console-mode.log"
+    expected = 0 if command == "build" else 1
+    assert (
+        main([command, "--config", str(pool[0]), "--log-file", str(log_file), *flags]) == expected
+    )
+    console = capsys.readouterr().err
+    if verbose:
+        assert "INFO mode=" in console
+        assert str(log_file) in console
+    else:
+        assert console == ""
+    assert "INFO mode=" in log_file.read_text()
+
+
+def test_silent_still_requires_confirmation_without_batch(pool, monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda: "no")
+    assert main(["build", "--config", str(pool[0]), "--apply", "--silent"]) == 1
+    assert "Continue? [y/N]" in capsys.readouterr().err
+    assert not pool[2].parent.exists()
+
+
 @pytest.mark.parametrize(
     "error,code", [(EOFError(), 1), (OSError("no stdin"), 1), (KeyboardInterrupt(), 130)]
 )
@@ -621,14 +685,12 @@ def test_heartbeat_interval_must_be_positive(pool, interval):
     assert error.value.code == 2
 
 
-def test_failure_details_are_logged_without_console_spam(pool, capsys):
+def test_silent_failure_details_are_logged_without_console_spam(pool, capsys):
     (pool[1] / "model/v20260101/file.nc").unlink()
     log_file = pool[0].parent / "failure.log"
-    assert run(pool, "--log-file", str(log_file)) == 1
+    assert run(pool, "--silent", "--log-file", str(log_file)) == 1
     console = capsys.readouterr().err
-    assert "exit 1" in console
-    assert str(log_file) in console
-    assert "missing source" not in console
+    assert console == ""
     assert "ERROR missing source" in log_file.read_text()
 
 
@@ -641,10 +703,11 @@ def test_unwritable_log_location_stops_before_processing(pool, capsys):
     assert not pool[2].exists()
 
 
-def test_cli_progress_bar_on_real_terminal(pool):
+def test_cli_defaults_to_verbose_on_real_terminal(pool):
     pty = pytest.importorskip("pty")
     master, slave = pty.openpty()
     log_file = pool[0].parent / "terminal.log"
+    process = None
     try:
         process = subprocess.Popen(
             [
@@ -661,11 +724,14 @@ def test_cli_progress_bar_on_real_terminal(pool):
             stdout=subprocess.PIPE,
             stderr=slave,
         )
-        stdout, _ = process.communicate(timeout=10)
         chunks = []
+        deadline = time.monotonic() + 10
         # Keep the parent's slave open until the buffered output is drained;
         # macOS can discard unread terminal output when the last slave closes.
-        while select.select([master], [], [], 0)[0]:
+        while process.poll() is None or select.select([master], [], [], 0)[0]:
+            assert time.monotonic() < deadline, "terminal process did not finish"
+            if not select.select([master], [], [], 0.1)[0]:
+                continue
             try:
                 chunk = os.read(master, 4096)
             except OSError as exc:
@@ -675,16 +741,19 @@ def test_cli_progress_bar_on_real_terminal(pool):
             if not chunk:
                 break
             chunks.append(chunk)
+        stdout, _ = process.communicate(timeout=1)
         console = b"".join(chunks).decode()
         assert process.returncode == 0
         assert stdout == b""
-        assert "\r" in console
-        assert "[####################]" in console
-        assert "100.0% 1/1" in console
+        assert "[####################]" not in console
+        assert "files=1/1 (100.0%)" in console
         assert "Dry-run completed" in console
-        assert "INFO" not in console
+        assert "INFO" in console
         assert "checked=1" in log_file.read_text()
     finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait()
         os.close(master)
         if slave is not None:
             os.close(slave)

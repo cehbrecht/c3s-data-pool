@@ -75,7 +75,7 @@ def cli(config, command, *options):
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert "INFO" not in result.stderr
+    assert "INFO" in result.stderr
     assert "Log:" in result.stderr
     assert "\r" not in result.stderr
     return log_file.read_text()
