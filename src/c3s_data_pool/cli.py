@@ -163,9 +163,6 @@ def _run(args, console):
             failed |= stats.failed
             for key, value in vars(stats).items():
                 setattr(total, key, getattr(total, key) + value)
-            if apply and stats.failed:
-                LOG.error("apply stopped; remaining collections were not processed")
-                break
     except KeyboardInterrupt:
         LOG.error("interrupted; completed files are retained, rerun to resume")
         return 130

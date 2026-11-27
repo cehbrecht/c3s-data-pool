@@ -174,6 +174,43 @@ def test_source_change_during_copy_is_not_published(copy_pool, monkeypatch):
     assert not list(copy_pool[2].parent.glob(".c3s-copy-*.part"))
 
 
+@pytest.mark.parametrize("failure", ["short-copy", "read-error"])
+def test_copy_failure_is_logged_and_later_files_are_copied(copy_pool, monkeypatch, failure):
+    config, source, destination, contents = copy_pool
+    for name in ("first.nc", "later.nc"):
+        (source.parent / name).write_bytes(contents)
+    with (config.parent / "catalog.csv").open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["path", "size", "mip_era"])
+        for name in ("first.nc", "file.nc", "later.nc"):
+            writer.writerow([f"model/v20260101/{name}", len(contents), "test"])
+    original_copy = copying.shutil.copyfileobj
+
+    def copy(input_stream, output, **kwargs):
+        if Path(input_stream.name).name == "file.nc":
+            output.write(contents[:1])
+            if failure == "read-error":
+                raise OSError(errno.EIO, "synthetic read error")
+            return
+        original_copy(input_stream, output, **kwargs)
+
+    monkeypatch.setattr(copying.shutil, "copyfileobj", copy)
+    log_file = config.parent / "session.log"
+    assert run(copy_pool, "--apply", "--log-file", str(log_file)) == 1
+    assert not destination.exists()
+    assert not list(destination.parent.glob(".c3s-copy-*.part"))
+    for name in ("first.nc", "later.nc"):
+        assert (destination.parent / name).read_bytes() == contents
+    log = log_file.read_text()
+    assert "ERROR copy failed" in log
+    assert "file.nc" in log
+    assert "files=3/3 (100.0%)" in log
+    assert "created=2" in log
+    assert "copy_failures=1" in log
+    if failure == "short-copy":
+        assert f"expected={len(contents)} actual=1" in log
+
+
 @pytest.mark.parametrize("matching", [False, True])
 def test_copy_publish_never_overwrites_a_concurrent_destination(copy_pool, monkeypatch, matching):
     original_copy = copying.shutil.copyfileobj

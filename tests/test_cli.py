@@ -528,7 +528,7 @@ def test_dry_run_skips_destination_conflicts(pool):
 
 @pytest.mark.parametrize("failure", ["missing", "size", "invalid", "conflict", "link"])
 @pytest.mark.parametrize("method", ["hardlink", "copy"])
-def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, failure, method):
+def test_apply_continues_after_failure_and_can_resume(pool, monkeypatch, caplog, failure, method):
     for name in ("first.nc", "bad.nc", "later.nc"):
         (pool[1] / name).write_bytes(b"data")
     bad_path = "../escape.nc" if failure == "invalid" else "bad.nc"
@@ -552,9 +552,9 @@ def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, 
     with caplog.at_level(logging.INFO):
         assert run(pool, "--apply", f"--{method}") == 1
     assert (pool[2] / "first.nc").samefile(pool[1] / "first.nc") == (method == "hardlink")
-    assert not (pool[2] / "later.nc").exists()
-    assert "apply stopped at row 2" in caplog.text
-    assert "files=2/3 (66.7%)" in caplog.text
+    assert (pool[2] / "later.nc").read_bytes() == b"data"
+    assert any(record.levelno == logging.ERROR for record in caplog.records)
+    assert "files=3/3 (100.0%)" in caplog.text
     assert "catalog file count changed" not in caplog.text
 
     # Resolve the synthetic failure and resume using the previously created link.
@@ -566,25 +566,29 @@ def test_apply_stops_on_first_failure_and_can_resume(pool, monkeypatch, caplog, 
     caplog.clear()
     with caplog.at_level(logging.INFO):
         assert run(pool, "--apply", f"--{method}") == 0
-    assert "created=2 existing=1" in caplog.text
+    assert "created=1 existing=2" in caplog.text
     assert run(pool, command="verify") == 0
 
 
-def test_apply_failure_stops_before_later_collections(pool, write_config, caplog):
-    (pool[1] / "model/v20260101/file.nc").unlink()
+@pytest.mark.parametrize("method", ["hardlink", "copy"])
+@pytest.mark.parametrize("failure", ["missing-source", "missing-catalog"])
+def test_apply_failure_continues_to_later_collections(pool, write_config, caplog, method, failure):
     config = tomllib.loads(pool[0].read_text())
+    if failure == "missing-source":
+        config["collections"]["test"]["source"] = "missing-source"
+    else:
+        config["collections"]["test"]["catalog"] = "missing-catalog.csv"
     config["collections"]["later"] = {
-        "catalog": "does-not-exist.csv.gz",
+        "catalog": pool[3].name,
         "source": "source",
         "target": "later-target",
     }
     write_config(pool[0], config)
     with caplog.at_level(logging.INFO):
-        assert run(pool, "--apply") == 1
-    assert "remaining collections were not processed" in caplog.text
-    assert "later:" not in caplog.text
-    assert "catalog failed" not in caplog.text
-    assert not (pool[0].parent / "later-target").exists()
+        assert run(pool, "--apply", f"--{method}") == 1
+    assert "later summary: files=1/1 (100.0%)" in caplog.text
+    assert "created=1" in caplog.text
+    assert (pool[0].parent / "later-target/model/v20260101/file.nc").read_bytes() == b"data"
 
 
 def test_apply_attempts_link_before_inspecting_existing_destination(pool, monkeypatch):

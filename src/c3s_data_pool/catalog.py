@@ -80,7 +80,6 @@ def process_catalog(
     stats = Stats()
     dataset_directories = set()
     metadata = MetadataCache()
-    stopped = False
     with Heartbeat(name, interval=heartbeat_seconds, console=console) as heartbeat:
         try:
             heartbeat.update("preparing catalog", paths["catalog"])
@@ -139,19 +138,11 @@ def process_catalog(
                     heartbeat.update(
                         "reading catalog", completed=stats.files, total=stats.total_files
                     )
-                    if apply and stats.failed:
-                        LOG.error(
-                            "%s: apply stopped at row %d; successful files are retained",
-                            name,
-                            stats.files,
-                        )
-                        stopped = True
-                        break
                     now = time.monotonic()
                     if stats.files % progress_every == 0 or now - last_report >= 30:
                         stats.report(name, "progress")
                         last_report = now
-            if not stopped and stats.files != stats.total_files:
+            if stats.files != stats.total_files:
                 raise ValueError(
                     "catalog file count changed between passes; use a fixed catalog snapshot"
                 )

@@ -93,9 +93,11 @@ Apply resolves source symlinks and uses their metadata to check type and size.
 With `--hardlink`, it prepares safe destination directories and attempts each hardlink directly,
 without first probing the destination file or filesystem compatibility. If a
 destination exists, its inode and device must match the source to be skipped.
-Apply stops on the first invalid entry, missing file, mismatch, conflict or
-transfer failure, including before later collections. Successful files remain;
-rerun after resolving the problem. Existing data files are never overwritten,
+Apply logs invalid entries, missing files, mismatches, conflicts and transfer
+failures as `ERROR`, then continues with the remaining files and collections.
+The final exit code is non-zero if any failed. An unreadable or malformed catalog
+ends that collection; later collections are still processed. Successful files remain;
+rerun after resolving the problems. Existing data files are never overwritten,
 deleted or modified. Keep directory trees stable during a run; apply rechecks
 destination directories before each transfer. Verify checks destination types and
 sizes independently of the source and reports all failures.
@@ -141,6 +143,13 @@ Review the config and account before submission; override the account with
 `sbatch --account=ACCOUNT scripts/levante-copy.sbatch` if needed. Conda must already
 be installed in `.conda-env`. Slurm runs the job on a compute node; you can log out
 without tmux. Slurm output goes to `c3s-copy-JOB_ID.out` in the repository root.
+
+Each submission keeps one detailed log, including progress and errors. To extract
+failures from a session:
+
+```sh
+grep ' ERROR ' logs/c3s-cmip6-copy-JOB_ID.log
+```
 
 To copy decadal instead, append `c3s-cmip6-decadal` to the submission command.
 Resubmit after an interruption to skip existing files with matching sizes. After
