@@ -68,6 +68,8 @@ c3s-data-pool verify --config config/dkrz.toml
 
 Add `--collection c3s-cmip6` or `--collection c3s-cmip6-decadal` to select a
 collection. Apply requires `y` or `yes`; Enter or unavailable stdin cancels.
+For unattended jobs, add `--batch` to skip confirmation. It does not enable
+writes by itself: `--apply` is still required.
 `--hardlink` is the default and can also be specified explicitly. `--copy` selects
 independent copies; the two flags are mutually exclusive. There
 is no automatic fallback to copying when a hardlink fails.
@@ -80,13 +82,25 @@ filesystem request. Destination conflicts and filesystem compatibility are
 checked during apply, so a successful dry-run cannot guarantee a successful
 build.
 
-The console shows an updating progress bar, then a short final status and log
-path. Detailed messages go to `~/.local/state/c3s-data-pool/logs` (respecting
-`XDG_STATE_HOME`), or the file chosen with `--log-file`. Explicit log files are
-appended to. Redirected/non-interactive runs omit the bar.
+Without `--batch`, verbose output is the default: detailed timestamped console
+logs followed by a final status and log path. With `--batch`, silent output is
+the default. Explicit `--verbose` or `--silent` overrides the default, including
+when output is redirected. The flags are mutually exclusive. There is no console
+progress bar in these modes.
 
-The bar keeps animating during slow filesystem calls without extra filesystem
-requests. Heartbeat log entries every 15 seconds include the current file and
+Both modes keep the full log file at `~/.local/state/c3s-data-pool/logs`
+(respecting `XDG_STATE_HOME`), or the path chosen with `--log-file`. Explicit log
+files are appended to. `--silent` still prompts for apply unless `--batch` is
+also provided; argument and log setup errors remain visible. These output options
+also work with `verify`.
+
+```sh
+c3s-data-pool build --config config/dkrz.toml
+c3s-data-pool build --config config/dkrz.toml --copy --apply --batch \
+  --log-file logs/c3s-copy.log
+```
+
+Heartbeat log entries every 15 seconds include the current file and
 elapsed time; use `--heartbeat-seconds 5` for more frequent log entries.
 
 Apply resolves source symlinks and uses their metadata to check type and size.
@@ -131,39 +145,51 @@ From the repository root on a login node, submit the
 [batch script](scripts/levante-copy.sbatch):
 
 ```sh
-sbatch scripts/levante-copy.sbatch
+# Dry-run (default).
+sbatch scripts/levante-copy.sbatch c3s-cmip6
+# Create independent copies.
+sbatch scripts/levante-copy.sbatch c3s-cmip6 --apply
+sbatch scripts/levante-copy.sbatch c3s-cmip6-decadal --apply
 squeue -u "$USER"
 # Replace JOB_ID with the number returned by sbatch.
-tail -F logs/c3s-cmip6-copy-JOB_ID.log
+tail -F logs/c3s-cmip6-apply-batch-JOB_ID.log
 ```
 
-This explicitly applies copies for CMIP6 using `config/dkrz.toml`, automatically
-answers the confirmation, and requests one CPU for 24 hours under `bk1088`.
+Both scripts default to dry-run; add `--apply` explicitly to create files.
+`--dry-run` is also accepted explicitly. The copy script uses `config/dkrz.toml`
+and defaults to `c3s-cmip6` when no collection is provided. It runs with `--batch`
+(silent by default), and requests one CPU for 24 hours under `bk1088`.
 Review the config and account before submission; override the account with
 `sbatch --account=ACCOUNT scripts/levante-copy.sbatch` if needed. Conda must already
 be installed in `.conda-env`. Slurm runs the job on a compute node; you can log out
 without tmux. Slurm output goes to `c3s-copy-JOB_ID.out` in the repository root.
 
-Each submission keeps one detailed log, including progress and errors. To extract
+Each submission keeps one detailed log named `logs/COLLECTION-MODE-batch-JOB_ID.log`,
+where `MODE` is `dry-run` or `apply`,
+including progress and errors. The selected copy/hardlink method is recorded
+inside the log. To extract
 failures from a session:
 
 ```sh
-grep ' ERROR ' logs/c3s-cmip6-copy-JOB_ID.log
+grep ' ERROR ' logs/c3s-cmip6-apply-batch-JOB_ID.log
 ```
 
-To copy decadal instead, append `c3s-cmip6-decadal` to the submission command.
-Resubmit after an interruption to skip existing files with matching sizes. After
+Resubmit with `--apply` after an interruption to skip existing files with matching sizes. After
 a successful build, run `verify` for that collection before removing sources.
 
 For hardlinks, provide a config and collection explicitly:
 
 ```sh
 sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
-tail -F logs/c3s-hardlink-JOB_ID.log
+sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6 --apply
+tail -F logs/c3s-cmip6-apply-batch-JOB_ID.log
 ```
 
 The hardlink script also requests one CPU for 24 hours under `bk1088` and
-automatically confirms apply. Slurm output goes to `c3s-hardlink-JOB_ID.out`.
+uses `--batch` to run without prompting or console progress. Slurm
+output goes to `c3s-hardlink-JOB_ID.out`. Both scripts keep detailed logs in
+`logs/`; add `--verbose` in a script to also include detailed
+logs in its Slurm output.
 Use your own TOML configs and collection names for CMIP5, CORDEX or Atlas.
 To retain only catalog-listed files, choose a separate, empty target on the same
 filesystem. The script creates hardlinks and leaves all source files and any

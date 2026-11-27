@@ -45,6 +45,22 @@ def main(argv=None):
             help="detailed log file (default: ~/.local/state/c3s-data-pool/logs, respecting XDG_STATE_HOME)",
         )
         sub.add_argument("--collection", action="append", help="select a collection (repeatable)")
+        verbosity = sub.add_mutually_exclusive_group()
+        verbosity.add_argument(
+            "--verbose",
+            action="store_true",
+            help="print detailed console logs (default without --batch)",
+        )
+        verbosity.add_argument(
+            "--silent",
+            action="store_true",
+            help="suppress console progress and final status; keep logs",
+        )
+        sub.add_argument(
+            "--batch",
+            action="store_true",
+            help="skip confirmation and default to silent; --apply is still required to write data",
+        )
         sub.add_argument("--progress-every", type=positive_int, default=10000, metavar="ROWS")
         sub.add_argument(
             "--heartbeat-seconds",
@@ -88,8 +104,9 @@ def main(argv=None):
             )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
+    verbose = args.verbose or (not args.batch and not args.silent)
     try:
-        output = RunOutput(args.log_file, args.command)
+        output = RunOutput(args.log_file, args.command, verbose=verbose, silent=not verbose)
     except OSError as exc:
         print(f"Cannot open log file: {exc}", file=sys.stderr)
         return 2
@@ -128,7 +145,9 @@ def _run(args, console):
             "dry-run checks all source files for existence, regular-file type and size; "
             "destination conflicts, filesystem compatibility and hardlink identity are not checked"
         )
-    if apply:
+    if apply and args.batch:
+        LOG.info("batch mode: apply confirmation skipped")
+    if apply and not args.batch:
         try:
             confirmed = confirm_apply(collections, method)
         except KeyboardInterrupt:

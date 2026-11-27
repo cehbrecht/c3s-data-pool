@@ -39,7 +39,7 @@ class ProgressBar:
 
 
 class RunOutput:
-    def __init__(self, log_file, command):
+    def __init__(self, log_file, command, *, verbose=False, silent=False):
         if log_file is None:
             state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
@@ -56,10 +56,18 @@ class RunOutput:
         )
         self.logger = logging.getLogger("c3s-data-pool")
         self.old_level = self.logger.level
-        self.console = ProgressBar(sys.stderr) if sys.stderr.isatty() else None
+        self.silent = silent
+        self.stream_handler = logging.StreamHandler(sys.stderr) if verbose else None
+        if self.stream_handler is not None:
+            self.stream_handler.setFormatter(self.handler.formatter)
+        self.console = (
+            ProgressBar(sys.stderr) if not (verbose or silent) and sys.stderr.isatty() else None
+        )
 
     def __enter__(self):
         self.logger.addHandler(self.handler)
+        if self.stream_handler is not None:
+            self.logger.addHandler(self.stream_handler)
         self.logger.setLevel(logging.INFO)
         return self
 
@@ -68,9 +76,14 @@ class RunOutput:
             self.console.finish()
         self.logger.removeHandler(self.handler)
         self.handler.close()
+        if self.stream_handler is not None:
+            self.logger.removeHandler(self.stream_handler)
+            self.stream_handler.close()
         self.logger.setLevel(self.old_level)
 
     def finish(self, code, mode):
+        if self.silent:
+            return
         if self.console is not None:
             self.console.finish()
         status = (
