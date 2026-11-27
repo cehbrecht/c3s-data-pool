@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=c3s-copy
-#SBATCH --account=bk1088
 #SBATCH --partition=shared
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -9,10 +8,11 @@
 #SBATCH --output=c3s-copy-%j.out
 
 # Submit from the repository root; dry-run is the default:
-# sbatch scripts/levante-copy.sbatch c3s-cmip6
+# sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6
 # Create copies only with an explicit --apply:
-# sbatch scripts/levante-copy.sbatch c3s-cmip6 --apply
-# sbatch scripts/levante-copy.sbatch c3s-cmip6-decadal --apply
+# sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6 --apply
+# sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6-decadal --apply
+# Replace ACCOUNT with your Slurm allocation account (e.g. bk1088), not your username.
 # Omitting the collection selects c3s-cmip6. --dry-run is also accepted explicitly.
 set -euo pipefail
 

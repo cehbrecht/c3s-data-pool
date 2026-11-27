@@ -1,6 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=c3s-hardlink
-#SBATCH --account=bk1088
 #SBATCH --partition=shared
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -9,13 +8,14 @@
 #SBATCH --output=c3s-hardlink-%j.out
 
 # Submit from the repository root, providing a config and collection:
-# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
+# sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
 # Dry-run is the default. Create hardlinks only with an explicit --apply:
-# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6 --apply
+# sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6 --apply
 # Other collections (add their entries to config/dkrz.toml first):
-# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip5
-# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cordex
-# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-atlas
+# sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip5
+# sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cordex
+# sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-atlas
+# Replace ACCOUNT with your Slurm allocation account (e.g. bk1088), not your username.
 # Both arguments are required; the collection must be defined in that config.
 # Append --apply to the examples above to create hardlinks; --dry-run is also accepted.
 # Source and target must be on the same filesystem. No files are pruned.

@@ -26,8 +26,8 @@ Edit [config/dkrz.toml](config/dkrz.toml), which includes both C3S collections:
 - `source`: the existing data pool root.
 - `target`: the new pool root, outside the old pool's cleanup scope.
 
-Relative local paths are resolved from the config file's directory. On Rook VMs,
-use [config/rook.toml](config/rook.toml), with `/mnt/lustre/work/...` paths. Run builds with `--apply` on a host
+Relative local paths are resolved from the config file's directory. Adjust source
+and target paths to match your host's mounts. Run builds with `--apply` on a host
 with writable Lustre access; dry-run and verify work on read-only mounts.
 
 TOML uses Python's built-in reader; the CLI has no third-party runtime dependencies.
@@ -54,7 +54,7 @@ Run the CLI directly. Without activating Conda, use
 
 ```sh
 # Check source existence, type and size; only the local cache and log are written.
-c3s-data-pool build --config config/rook.toml --log-file logs/cmip6-dry-run.log
+c3s-data-pool build --config config/dkrz.toml --log-file logs/cmip6-dry-run.log
 
 # Review the displayed roots and answer yes to create hardlinks.
 c3s-data-pool build --config config/dkrz.toml --apply
@@ -146,10 +146,10 @@ From the repository root on a login node, submit the
 
 ```sh
 # Dry-run (default).
-sbatch scripts/levante-copy.sbatch c3s-cmip6
+sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6
 # Create independent copies.
-sbatch scripts/levante-copy.sbatch c3s-cmip6 --apply
-sbatch scripts/levante-copy.sbatch c3s-cmip6-decadal --apply
+sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6 --apply
+sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6-decadal --apply
 squeue -u "$USER"
 # Replace JOB_ID with the number returned by sbatch.
 tail -F logs/c3s-cmip6-apply-batch-JOB_ID.log
@@ -158,9 +158,11 @@ tail -F logs/c3s-cmip6-apply-batch-JOB_ID.log
 Both scripts default to dry-run; add `--apply` explicitly to create files.
 `--dry-run` is also accepted explicitly. The copy script uses `config/dkrz.toml`
 and defaults to `c3s-cmip6` when no collection is provided. It runs with `--batch`
-(silent by default), and requests one CPU for 24 hours under `bk1088`.
-Review the config and account before submission; override the account with
-`sbatch --account=ACCOUNT scripts/levante-copy.sbatch` if needed. Conda must already
+(silent by default), and requests one CPU for 24 hours.
+Replace `ACCOUNT` with an authorized Slurm allocation account, such as `bk1088`;
+this is not your login username or necessarily the storage project `ik1017`.
+Neither script hardcodes an account. Pass `--account` before the script path so
+Slurm handles it at submission. Review the config before submission. Conda must already
 be installed in `.conda-env`. Slurm runs the job on a compute node; you can log out
 without tmux. Slurm output goes to `c3s-copy-JOB_ID.out` in the repository root.
 
@@ -180,12 +182,12 @@ a successful build, run `verify` for that collection before removing sources.
 For hardlinks, provide a config and collection explicitly:
 
 ```sh
-sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
-sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6 --apply
+sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
+sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6 --apply
 tail -F logs/c3s-cmip6-apply-batch-JOB_ID.log
 ```
 
-The hardlink script also requests one CPU for 24 hours under `bk1088` and
+The hardlink script also requests one CPU for 24 hours and
 uses `--batch` to run without prompting or console progress. Slurm
 output goes to `c3s-hardlink-JOB_ID.out`. Both scripts keep detailed logs in
 `logs/`; add `--verbose` in a script to also include detailed
