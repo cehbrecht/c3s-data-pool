@@ -43,8 +43,11 @@ def copy_file(source, destination, size, source_info):
                 temporary = Path(output.name)
                 shutil.copyfileobj(input_stream, output, length=1024 * 1024)
                 output.flush()
-                if os.fstat(output.fileno()).st_size != size:
-                    raise ValueError("copied size does not match the catalog")
+                copied_size = os.fstat(output.fileno()).st_size
+                if copied_size != size:
+                    raise ValueError(
+                        f"copied size does not match the catalog: expected={size} actual={copied_size}"
+                    )
                 after = os.fstat(input_stream.fileno())
                 if (after.st_size, after.st_mtime_ns) != (size, opened.st_mtime_ns):
                     raise ValueError("source changed during copying")
