@@ -1,12 +1,11 @@
 # c3s-data-pool
 
-Retain catalog-listed files in separate local data pools using hardlinks by
-default, or independent copies when explicitly selected. Built for the C3S CMIP6 and decadal migration at DKRZ;
-also works with other catalogs using the same schema.
+Build and verify catalog-selected data pools using hardlinks or independent
+copies. Designed for C3S migrations; works with any catalog using the same schema.
 
 ## Install
 
-Requires Conda and Python 3.12 or newer. From this checkout:
+Requires Conda and Python 3.12 or newer:
 
 ```sh
 make env
@@ -14,215 +13,78 @@ make install
 conda activate ./.conda-env
 ```
 
-`make env` creates `.conda-env` from [environment.yml](environment.yml).
-Package and development dependencies stay in `pyproject.toml`, installed with
-`make install` or `make develop`. Override `CONDA`, `ENV_PREFIX` or `ENV_FILE` as needed.
+The Conda environment is defined in [environment.yml](environment.yml); package
+and development dependencies are in [pyproject.toml](pyproject.toml).
+Make uses `.conda-env/bin/python` directly, so activation is optional.
 
 ## Configure
 
-Edit [config/dkrz.toml](config/dkrz.toml), which includes both C3S collections:
+Edit [config/dkrz.toml](config/dkrz.toml). Each collection defines:
 
-- `catalog`: a direct HTTPS `.csv.gz` URL, or a local `.csv.gz` / `.csv` file.
-- `source`: the existing data pool root.
-- `target`: the new pool root, outside the old pool's cleanup scope.
+- `catalog`: HTTPS `.csv.gz` URL or local `.csv` / `.csv.gz` file.
+- `source`: existing data pool root.
+- `target`: retained pool root, outside the source cleanup scope.
 
-Relative local paths are resolved from the config file's directory. Adjust source
-and target paths to match your host's mounts. Run builds with `--apply` on a host
-with writable Lustre access; dry-run and verify work on read-only mounts.
+Catalog rows require `path`, `size` (bytes) and `mip_era`. Paths are relative to
+source/target roots and include dataset versions. Local config paths are relative
+to the config directory. Adjust data roots to match your host's mounts.
 
-TOML uses Python's built-in reader; the CLI has no third-party runtime dependencies.
-
-Check catalog versions in the
-[main Intake catalog](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s.yaml).
-For a migration, pin URLs to a Git commit or keep fixed local catalog snapshots.
-
-Each CSV row needs `path`, `size` (bytes) and `mip_era`. Paths are relative to the
-source/target roots and include the dataset version; `mip_era` is not prepended.
-Catalogs are streamed row by row.
-Each collection is read once to count file entries, then again to process them;
-progress shows processed/total files and a percentage. Remote catalogs are
-downloaded once and reused from `~/.cache/c3s-data-pool` (or
-`$XDG_CACHE_HOME/c3s-data-pool`). Both passes use the same open local snapshot.
-Use `--cache-dir PATH` to choose a writable local disk and `--refresh-catalog` to
-replace cached snapshots. Failed downloads leave the previous cache intact and
-return an error. Local catalogs are read directly.
+Check versions in the [main Intake catalog](https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/heads/master/intake/catalogs/c3s.yaml).
+For migrations, use fixed local snapshots or URLs pinned to a Git commit.
+Remote catalogs are cached locally and streamed row by row.
 
 ## Build and verify
 
-Run the CLI directly. Without activating Conda, use
-`.conda-env/bin/c3s-data-pool` instead of `c3s-data-pool` below.
-
 ```sh
-# Check source existence, type and size; only the local cache and log are written.
-c3s-data-pool build --config config/dkrz.toml --log-file logs/cmip6-dry-run.log
+# Dry-run: check source existence, regular-file type and actual size.
+c3s-data-pool build --config config/dkrz.toml
 
-# Review the displayed roots and answer yes to create hardlinks.
+# Create hardlinks after confirming the displayed roots.
 c3s-data-pool build --config config/dkrz.toml --apply
 
-# Explicit alternative: copy file contents (requires additional storage/quota).
+# Alternatively, create independent copies (requires additional storage).
 c3s-data-pool build --config config/dkrz.toml --copy --apply
 
-# Check retained files, independently of the original source pool.
+# Verify retained files without requiring the original source.
 c3s-data-pool verify --config config/dkrz.toml
 ```
 
-Add `--collection c3s-cmip6` or `--collection c3s-cmip6-decadal` to select a
-collection. Apply requires `y` or `yes`; Enter or unavailable stdin cancels.
-For unattended jobs, add `--batch` to skip confirmation. It does not enable
-writes by itself: `--apply` is still required.
-`--hardlink` is the default and can also be specified explicitly. `--copy` selects
-independent copies; the two flags are mutually exclusive. There
-is no automatic fallback to copying when a hardlink fails.
-Dry-run never creates data pool directories or hardlinks. Keep its writable cache
-and log on the VM's local disk rather than read-only Lustre.
+Add `--collection NAME` to select a collection; repeat it to select several.
+Hardlink is the default; `--hardlink` makes it explicit. Both build methods
+continue after file errors, preserve completed files and return non-zero if
+anything failed. Existing data files are never overwritten, modified or deleted.
 
-Dry-run makes one stat call per source file and follows symlinks. That single
-response provides existence, type and size; comparing the size costs no extra
-filesystem request. Destination conflicts and filesystem compatibility are
-checked during apply, so a successful dry-run cannot guarantee a successful
-build.
+Console output is verbose by default. Use `--progress` for an interactive progress
+bar or `--silent` for no console progress/status. `--batch` skips confirmation and
+defaults to silent; writes still require `--apply`. Explicit console options
+override defaults. All modes keep detailed timestamped file logs, including
+heartbeats during slow filesystem calls. Use `--log-file PATH` to choose the log.
 
-Without `--batch`, verbose output is the default: detailed timestamped console
-logs followed by a final status and log path. With `--batch`, silent output is
-the default. Explicit `--verbose` or `--silent` overrides the default, including
-when output is redirected. The flags are mutually exclusive. There is no console
-progress bar in these modes.
+See [catalog and file-handling details](docs/behavior.md) for caching, counters,
+copy publication and error behavior. For unattended jobs, see
+[Slurm batch instructions for Levante](docs/levante.md).
 
-Both modes keep the full log file at `~/.local/state/c3s-data-pool/logs`
-(respecting `XDG_STATE_HOME`), or the path chosen with `--log-file`. Explicit log
-files are appended to. `--silent` still prompts for apply unless `--batch` is
-also provided; argument and log setup errors remain visible. These output options
-also work with `verify`.
+## Migration
 
-```sh
-c3s-data-pool build --config config/dkrz.toml
-c3s-data-pool build --config config/dkrz.toml --copy --apply --batch \
-  --log-file logs/c3s-copy.log
-```
+1. Review roots and catalog versions, then run a dry-run. Dry-run does not check
+   destination conflicts or write permissions.
+2. Build with `--apply`, then verify against the same catalogs. Require exit `0`.
+3. Switch CDS/Rook or other consumers to the retained roots and check access.
+4. Coordinate removal of original paths only after these checks.
 
-Heartbeat log entries every 15 seconds include the current file and
-elapsed time; use `--heartbeat-seconds 5` for more frequent log entries.
-
-Apply resolves source symlinks and uses their metadata to check type and size.
-With `--hardlink`, it prepares safe destination directories and attempts each hardlink directly,
-without first probing the destination file or filesystem compatibility. If a
-destination exists, its inode and device must match the source to be skipped.
-Apply logs invalid entries, missing files, mismatches, conflicts and transfer
-failures as `ERROR`, then continues with the remaining files and collections.
-The final exit code is non-zero if any failed. An unreadable or malformed catalog
-ends that collection; later collections are still processed. Successful files remain;
-rerun after resolving the problems. Existing data files are never overwritten,
-deleted or modified. Keep directory trees stable during a run; apply rechecks
-destination directories before each transfer. Verify checks destination types and
-sizes independently of the source and reports all failures.
-
-Copy mode needs read access to sources and can copy across filesystems. It creates
-new files owned by the running user, preserving source permission bits and
-access/modification times, without copying ownership or ACLs. Existing regular files are skipped
-if their catalog size matches; other destinations are conflicts. This is size
-validation, not checksum validation, and does not convert existing hardlinks.
-
-Copies are written to hidden temporary files beside their destinations and
-validated before publication. Publication uses a hardlink from the new temporary
-file owned by your account, which avoids the original source ownership restriction
-and never overwrites a destination. The destination filesystem must support
-hardlinks. Failed/interrupted copies remove their temporary files; an uncatchable
-termination may leave `.c3s-copy-*.part` files, which reruns ignore.
-
-Progress and summaries go to the log with local timestamps and UTC offsets,
-including logical catalog volume in decimal GB/TB and errors. Exact bytes are
-used internally for file-size checks.
-`files` counts processed catalog entries, including duplicates and invalid rows.
-`datasets` counts distinct parent directories of valid entries per collection;
-different versions count separately. Totals sum across collections.
-Exit `0` means success; non-zero means cancellation, an error or an incomplete
-pool. `checked` counts source files that passed dry-run; `created` and `existing`
-count apply results. Use verify to check a built pool.
-
-## Batch jobs on Levante
-
-From the repository root on a login node, submit the
-[batch script](scripts/levante-copy.sbatch):
-
-```sh
-# Dry-run (default).
-sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6
-# Create independent copies.
-sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6 --apply
-sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6-decadal --apply
-squeue -u "$USER"
-# Replace JOB_ID with the number returned by sbatch.
-tail -F logs/c3s-cmip6-apply-batch-JOB_ID.log
-```
-
-Both scripts default to dry-run; add `--apply` explicitly to create files.
-`--dry-run` is also accepted explicitly. The copy script uses `config/dkrz.toml`
-and defaults to `c3s-cmip6` when no collection is provided. It runs with `--batch`
-(silent by default), and requests one CPU for 24 hours.
-Replace `ACCOUNT` with an authorized Slurm allocation account, such as `bk1088`;
-this is not your login username or necessarily the storage project `ik1017`.
-Neither script hardcodes an account. Pass `--account` before the script path so
-Slurm handles it at submission. Review the config before submission. Conda must already
-be installed in `.conda-env`. Slurm runs the job on a compute node; you can log out
-without tmux. Slurm output goes to `c3s-copy-JOB_ID.out` in the repository root.
-
-Each submission keeps one detailed log named `logs/COLLECTION-MODE-batch-JOB_ID.log`,
-where `MODE` is `dry-run` or `apply`,
-including progress and errors. The selected copy/hardlink method is recorded
-inside the log. To extract
-failures from a session:
-
-```sh
-grep ' ERROR ' logs/c3s-cmip6-apply-batch-JOB_ID.log
-```
-
-Resubmit with `--apply` after an interruption to skip existing files with matching sizes. After
-a successful build, run `verify` for that collection before removing sources.
-
-For hardlinks, provide a config and collection explicitly:
-
-```sh
-sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
-sbatch --account=ACCOUNT scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6 --apply
-tail -F logs/c3s-cmip6-apply-batch-JOB_ID.log
-```
-
-The hardlink script also requests one CPU for 24 hours and
-uses `--batch` to run without prompting or console progress. Slurm
-output goes to `c3s-hardlink-JOB_ID.out`. Both scripts keep detailed logs in
-`logs/`; add `--verbose` in a script to also include detailed
-logs in its Slurm output.
-Use your own TOML configs and collection names for CMIP5, CORDEX or Atlas.
-To retain only catalog-listed files, choose a separate, empty target on the same
-filesystem. The script creates hardlinks and leaves all source files and any
-existing target files untouched; it does not prune an existing pool. Your account
-must have permission to create the source hardlinks and write the target.
-Verify the new pool and switch consumers before separately retiring the old pool.
-
-## Migrate safely
-
-1. Review the config and run a dry-run. Resolve missing files and size mismatches.
-2. Run with `--apply`, then verify both collections using the same catalogs.
-   Require exit `0` and check CDS/Rook access through the new roots.
-3. Coordinate removal of the old paths only after these checks. Source and
-   target must be on the same filesystem for hardlink mode. Hardlinks survive removal of the
-   original paths, but **in-place changes affect every link**: keep data immutable.
-4. Point consumers to the retained roots and verify again after the old paths
-   disappear. Verification checks regular files and sizes, not content checksums.
-
-There is no pruning or synchronization. Files absent from a later catalog remain
-untouched.
+Hardlinks require the same filesystem and sufficient permissions. They survive
+removal of original paths, but in-place changes affect all links. Copies are
+independent. Verification checks types and sizes, not checksums.
+There is no pruning or synchronization; files absent from a catalog remain.
 
 ## Develop
 
 ```sh
 make develop             # Editable install with test and lint dependencies
-make check               # Ruff lint/format checks and all tests
-make format              # Sort imports and format code
-make test-integration    # Dummy CMIP6 and decadal pool tests
+make check               # Lint, formatting checks and all tests
+make format              # Format Python code
+make test-integration    # Synthetic CMIP6 and decadal pool tests
 ```
 
-Tests use tiny synthetic files in temporary directories; no climate data or
-Lustre access is needed. GitHub CI runs lint and tests. Use `make help` for all
-development targets; Make uses `.conda-env/bin/python` without requiring
-activation. `make build` packages a wheel; use the CLI for data pool operations.
+Tests need no climate data or Lustre access. GitHub CI runs lint and tests.
+Use `make help` for development targets; run pool operations through the CLI.

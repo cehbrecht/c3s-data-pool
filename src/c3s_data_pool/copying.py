@@ -19,12 +19,19 @@ def existing_copy(destination, size):
     return True
 
 
-def copy_file(source, destination, size, source_info):
+def copy_file(source, destination, size, source_info, *, on_stage=None):
     """Return True for a new copy, False for an existing size-verified file."""
+
+    def report(stage, path):
+        if on_stage is not None:
+            on_stage(stage, path)
+
+    report("checking destination", destination)
     if existing_copy(destination, size):
         return False
     temporary = None
     try:
+        report("opening source", source)
         with source.open("rb") as input_stream:
             opened = os.fstat(input_stream.fileno())
             if (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns) != (
@@ -41,7 +48,9 @@ def copy_file(source, destination, size, source_info):
                 delete=False,
             ) as output:
                 temporary = Path(output.name)
+                report("copying file", source)
                 shutil.copyfileobj(input_stream, output, length=1024 * 1024)
+                report("flushing copy", destination)
                 output.flush()
                 copied_size = os.fstat(output.fileno()).st_size
                 if copied_size != size:
@@ -53,6 +62,7 @@ def copy_file(source, destination, size, source_info):
                     raise ValueError("source changed during copying")
                 os.fchmod(output.fileno(), stat.S_IMODE(source_info.st_mode) & 0o777)
                 os.fsync(output.fileno())
+        report("publishing file", destination)
         os.utime(temporary, ns=(source_info.st_atime_ns, source_info.st_mtime_ns))
         try:
             # The temporary file is owned by this user on the destination filesystem;

@@ -7,37 +7,19 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --output=c3s-copy-%j.out
 
-# Submit from the repository root; dry-run is the default:
+# Submit from the repository root; both scripts accept the same arguments:
 # sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6
-# Create copies only with an explicit --apply:
 # sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6 --apply
 # sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip6-decadal --apply
-# Replace ACCOUNT with your Slurm allocation account (e.g. bk1088), not your username.
-# Omitting the collection selects c3s-cmip6. --dry-run is also accepted explicitly.
+# Other collections (add entries to config/dkrz.toml first):
+# sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cmip5 --apply
+# sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-cordex --apply
+# sbatch --account=ACCOUNT scripts/levante-copy.sbatch c3s-atlas --apply
+# Optional config: append --config config/custom.toml
+# ACCOUNT is a Slurm allocation account (e.g. bk1088), not a username.
+# Defaults: c3s-cmip6, config/dkrz.toml, dry-run and silent output.
+# Hardlinks require the source and target to be on the same filesystem.
 set -euo pipefail
 
-collection="c3s-cmip6"
-if [[ $# -gt 0 && "$1" != --* ]]; then
-    collection="$1"
-    shift
-fi
-mode="dry-run"
-case "$*" in
-    ""|--dry-run) ;;
-    --apply) mode="apply" ;;
-    *)
-        echo "Usage: sbatch scripts/levante-copy.sbatch [COLLECTION] [--apply|--dry-run]" >&2
-        exit 2
-        ;;
-esac
-
 cd "${SLURM_SUBMIT_DIR:?Submit this script using sbatch from the repository root}"
-mkdir -p logs
-log_file="logs/${collection}-${mode}-batch-${SLURM_JOB_ID}.log"
-
-# Keep detailed progress in the job log, without a prompt or console output.
-exec .conda-env/bin/c3s-data-pool build \
-    --config config/dkrz.toml \
-    --collection "$collection" \
-    "--$mode" --copy --batch \
-    --log-file "$log_file"
+source scripts/levante-build.sh copy "$@"

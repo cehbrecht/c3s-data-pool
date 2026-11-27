@@ -1,6 +1,7 @@
 """Exercise batch argument handling without Slurm or access to data pools."""
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,8 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 @pytest.fixture
 def batch_env(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    shutil.copy(SCRIPTS / "levante-build.sh", tmp_path / "scripts")
     cli = tmp_path / ".conda-env/bin/c3s-data-pool"
     cli.parent.mkdir(parents=True)
     cli.write_text('#!/bin/bash\nprintf "%s\\n" "$@"\nexit "${MOCK_EXIT:-0}"\n')
@@ -25,8 +28,8 @@ def batch_env(tmp_path):
 @pytest.mark.parametrize("method", ["copy", "hardlink"])
 @pytest.mark.parametrize("mode", [None, "--dry-run", "--apply"])
 def test_batch_mode_and_log_name(batch_env, method, mode):
-    config = "config/dkrz.toml" if method == "copy" else "config/custom pool.toml"
-    args = ["c3s-cmip6-decadal"] if method == "copy" else [config, "c3s-cmip6-decadal"]
+    config = "config/custom pool.toml"
+    args = ["c3s-cmip6-decadal", "--config", config]
     if mode:
         args.append(mode)
     result = subprocess.run(
@@ -52,9 +55,10 @@ def test_batch_mode_and_log_name(batch_env, method, mode):
     ]
 
 
-def test_copy_batch_defaults_to_cmip6_dry_run(batch_env):
+@pytest.mark.parametrize("method", ["copy", "hardlink"])
+def test_batch_defaults_to_cmip6_dry_run(batch_env, method):
     result = subprocess.run(
-        ["bash", str(SCRIPTS / "levante-copy.sbatch")],
+        ["bash", str(SCRIPTS / f"levante-{method}.sbatch")],
         env=batch_env,
         capture_output=True,
         text=True,
@@ -67,11 +71,12 @@ def test_copy_batch_defaults_to_cmip6_dry_run(batch_env):
 
 
 @pytest.mark.parametrize("method", ["copy", "hardlink"])
-@pytest.mark.parametrize("extra", [["--typo"], ["--apply", "--dry-run"]])
+@pytest.mark.parametrize(
+    "extra", [["--typo"], ["--apply", "--dry-run"], ["--config"], ["a", "b"], ["../escape"]]
+)
 def test_invalid_batch_arguments_do_not_invoke_cli(batch_env, method, extra):
-    args = [] if method == "copy" else ["config/dkrz.toml", "c3s-cmip6"]
     result = subprocess.run(
-        ["bash", str(SCRIPTS / f"levante-{method}.sbatch"), *args, *extra],
+        ["bash", str(SCRIPTS / f"levante-{method}.sbatch"), *extra],
         env=batch_env,
         capture_output=True,
         text=True,
@@ -84,11 +89,24 @@ def test_invalid_batch_arguments_do_not_invoke_cli(batch_env, method, extra):
 
 @pytest.mark.parametrize("method", ["copy", "hardlink"])
 def test_batch_preserves_failed_cli_exit_status(batch_env, method):
-    args = [] if method == "copy" else ["config/dkrz.toml", "c3s-cmip6"]
     result = subprocess.run(
-        ["bash", str(SCRIPTS / f"levante-{method}.sbatch"), *args, "--apply"],
+        ["bash", str(SCRIPTS / f"levante-{method}.sbatch"), "--apply"],
         env={**batch_env, "MOCK_EXIT": "1"},
         capture_output=True,
         check=False,
     )
     assert result.returncode == 1
+
+
+@pytest.mark.parametrize("method", ["copy", "hardlink"])
+@pytest.mark.parametrize("console", ["--verbose", "--silent", "--progress"])
+def test_batch_passes_console_option_to_cli(batch_env, method, console):
+    result = subprocess.run(
+        ["bash", str(SCRIPTS / f"levante-{method}.sbatch"), console],
+        env=batch_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert console in result.stdout.splitlines()

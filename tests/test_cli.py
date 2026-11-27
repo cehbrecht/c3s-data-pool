@@ -703,7 +703,8 @@ def test_unwritable_log_location_stops_before_processing(pool, capsys):
     assert not pool[2].exists()
 
 
-def test_cli_defaults_to_verbose_on_real_terminal(pool):
+@pytest.mark.parametrize("progress", [False, True])
+def test_cli_console_modes_on_real_terminal(pool, progress):
     pty = pytest.importorskip("pty")
     master, slave = pty.openpty()
     log_file = pool[0].parent / "terminal.log"
@@ -719,6 +720,7 @@ def test_cli_defaults_to_verbose_on_real_terminal(pool):
                 str(pool[0]),
                 "--log-file",
                 str(log_file),
+                *(["--progress"] if progress else []),
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -745,10 +747,15 @@ def test_cli_defaults_to_verbose_on_real_terminal(pool):
         console = b"".join(chunks).decode()
         assert process.returncode == 0
         assert stdout == b""
-        assert "[####################]" not in console
-        assert "files=1/1 (100.0%)" in console
+        if progress:
+            assert "[####################]" in console
+            assert "100.0% 1/1" in console
+            assert "INFO" not in console
+        else:
+            assert "[####################]" not in console
+            assert "files=1/1 (100.0%)" in console
+            assert "INFO" in console
         assert "Dry-run completed" in console
-        assert "INFO" in console
         assert "checked=1" in log_file.read_text()
     finally:
         if process is not None and process.poll() is None:

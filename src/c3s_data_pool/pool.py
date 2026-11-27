@@ -61,11 +61,17 @@ def process_row(
         raise ValueError(f"unsupported retention method: {method}")
     if metadata is None:
         metadata = MetadataCache()
+
+    def report(stage, current):
+        if heartbeat is not None:
+            heartbeat.update(stage, current, completed=stats.files - 1, total=stats.total_files)
+
     if build and not apply:
         check_source(paths, relative, size, stats)
         return
     destination = paths["target"] / relative
     if not build:
+        report("checking destination", destination)
         try:
             existing = destination_stat(paths["target"], relative, metadata)
         except (ValueError, NotADirectoryError) as exc:
@@ -88,6 +94,7 @@ def process_row(
         return
 
     source = paths["source"] / relative
+    report("checking source", source)
     try:
         source, source_info = metadata.source_file(source)
     except FileNotFoundError:
@@ -110,18 +117,15 @@ def process_row(
         return
     try:
         try:
+            report("preparing destination", destination.parent)
             prepare_destination(paths["target"], relative)
         except (ValueError, NotADirectoryError) as exc:
             stats.conflicts += 1
             LOG.error("conflict %s: %s", destination, exc)
             return
         if method == "copy":
-            if heartbeat is not None:
-                heartbeat.update(
-                    "copying file", source, completed=stats.files - 1, total=stats.total_files
-                )
             try:
-                created = copy_file(source, destination, size, source_info)
+                created = copy_file(source, destination, size, source_info, on_stage=report)
             except FileExistsError as exc:
                 stats.conflicts += 1
                 LOG.error("conflict %s: %s", destination, exc)
@@ -132,6 +136,7 @@ def process_row(
                 stats.existing += 1
             return
         try:
+            report("creating hardlink", destination)
             os.link(source, destination, follow_symlinks=False)
         except FileExistsError:
             try:

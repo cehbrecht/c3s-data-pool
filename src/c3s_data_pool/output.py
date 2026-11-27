@@ -1,4 +1,4 @@
-"""Keep detailed logs on disk and a single updating line on the terminal."""
+"""Keep file logs with verbose, silent or terminal progress output."""
 
 import logging
 import os
