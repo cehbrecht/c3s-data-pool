@@ -10,10 +10,10 @@
 
 # Submit from the repository root, providing a config and collection:
 # sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip6
-# Other collections (create the corresponding TOML config first):
-# sbatch scripts/levante-hardlink.sbatch config/cmip5.toml c3s-cmip5
-# sbatch scripts/levante-hardlink.sbatch config/cordex.toml c3s-cordex
-# sbatch scripts/levante-hardlink.sbatch config/atlas.toml c3s-atlas
+# Other collections (add their entries to config/dkrz.toml first):
+# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cmip5
+# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-cordex
+# sbatch scripts/levante-hardlink.sbatch config/dkrz.toml c3s-atlas
 # Both arguments are required; the collection must be defined in that config.
 # Submitting this script explicitly authorizes the --apply --hardlink operation.
 # Source and target must be on the same filesystem. No files are pruned.
