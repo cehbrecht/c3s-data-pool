@@ -113,6 +113,30 @@ def test_copy_dry_run_does_not_copy_or_link(copy_pool, monkeypatch):
     assert not copy_pool[2].parent.exists()
 
 
+def test_copy_stages_distinguish_existing_files_from_transfers(copy_pool):
+    _, source, destination, contents = copy_pool
+    destination.parent.mkdir(parents=True)
+    stages = []
+
+    def report(stage, path):
+        stages.append(stage)
+        if stage == "publishing file":
+            assert not destination.exists()
+            assert path == destination
+
+    assert copying.copy_file(source, destination, len(contents), source.stat(), on_stage=report)
+    assert stages == [
+        "checking destination",
+        "opening source",
+        "copying file",
+        "flushing copy",
+        "publishing file",
+    ]
+    stages.clear()
+    assert not copying.copy_file(source, destination, len(contents), source.stat(), on_stage=report)
+    assert stages == ["checking destination"]
+
+
 @pytest.mark.parametrize("kind", ["wrong-size", "symlink", "directory"])
 def test_copy_conflicts_are_untouched(copy_pool, kind):
     destination = copy_pool[2]

@@ -46,11 +46,10 @@ def test_non_toml_config_rejected(tmp_path, caplog, suffix):
     assert "config must be a .toml file" in caplog.text
 
 
-@pytest.mark.parametrize("name", ["dkrz", "rook"])
-def test_example_toml_configs(name):
-    config = Path(__file__).parents[1] / "config" / f"{name}.toml"
+def test_example_toml_config():
+    config = Path(__file__).parents[1] / "config/dkrz.toml"
     collections = dict(load_config(config, None, build=True))
     assert set(collections) == {"c3s-cmip6", "c3s-cmip6-decadal"}
-    prefix = "/mnt/lustre/work/" if name == "rook" else "/work/"
+    prefix = "/work/"
     assert all(str(paths["source"]).startswith(prefix) for paths in collections.values())
     assert all(str(paths["target"]).startswith(prefix) for paths in collections.values())

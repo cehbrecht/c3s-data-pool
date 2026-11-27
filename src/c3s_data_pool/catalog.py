@@ -113,7 +113,7 @@ def process_catalog(
                         stats.logical_bytes += size
                         try:
                             heartbeat.update(
-                                "checking source" if dry_run else "checking file",
+                                "checking source" if build else "checking destination",
                                 (paths["source"] if build else paths["target"]) / relative,
                                 completed=stats.files - 1,
                                 total=stats.total_files,

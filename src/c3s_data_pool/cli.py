@@ -47,6 +47,9 @@ def main(argv=None):
         sub.add_argument("--collection", action="append", help="select a collection (repeatable)")
         verbosity = sub.add_mutually_exclusive_group()
         verbosity.add_argument(
+            "--progress", action="store_true", help="show a progress bar on an interactive terminal"
+        )
+        verbosity.add_argument(
             "--verbose",
             action="store_true",
             help="print detailed console logs (default without --batch)",
@@ -104,9 +107,11 @@ def main(argv=None):
             )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
-    verbose = args.verbose or (not args.batch and not args.silent)
+    verbose = args.verbose or (not args.batch and not args.silent and not args.progress)
     try:
-        output = RunOutput(args.log_file, args.command, verbose=verbose, silent=not verbose)
+        output = RunOutput(
+            args.log_file, args.command, verbose=verbose, silent=not verbose and not args.progress
+        )
     except OSError as exc:
         print(f"Cannot open log file: {exc}", file=sys.stderr)
         return 2
