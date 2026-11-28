@@ -1,16 +1,23 @@
 #!/bin/bash
-# Shared implementation sourced by the Slurm copy and hardlink scripts.
+# Shared implementation sourced by the Slurm build and verify scripts.
 method="$1"
 shift
 config="config/dkrz.toml"
 collection="c3s-cmip6"
 collection_set=false
 mode="dry-run"
+if [[ "$method" == verify ]]; then
+    mode="verify"
+fi
 mode_set=false
 console_option=""
 
 usage() {
-    echo "Usage: sbatch --account=ACCOUNT scripts/levante-${method}.sbatch [COLLECTION] [--config FILE] [--apply|--dry-run] [--verbose|--silent|--progress]" >&2
+    local build_options="[--apply|--dry-run] "
+    if [[ "$method" == verify ]]; then
+        build_options=""
+    fi
+    echo "Usage: sbatch --account=ACCOUNT scripts/levante-${method}.sbatch [COLLECTION] [--config FILE] ${build_options}[--verbose|--silent|--progress]" >&2
     exit 2
 }
 
@@ -22,6 +29,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --apply|--dry-run)
+            [[ "$method" != verify ]] || usage
             [[ "$mode_set" == false ]] || usage
             mode="${1#--}"
             mode_set=true
@@ -45,10 +53,11 @@ done
 mkdir -p logs
 log_file="logs/${collection}-${mode}-batch-${SLURM_JOB_ID}.log"
 
-set -- build \
-    --config "$config" \
-    --collection "$collection" \
-    "--$mode" "--$method" --batch
+if [[ "$method" == verify ]]; then
+    set -- verify --config "$config" --collection "$collection" --batch
+else
+    set -- build --config "$config" --collection "$collection" "--$mode" "--$method" --batch
+fi
 if [[ -n "$console_option" ]]; then
     set -- "$@" "$console_option"
 fi

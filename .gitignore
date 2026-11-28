@@ -28,6 +28,7 @@ logs/
 *.log
 c3s-copy-*.out
 c3s-hardlink-*.out
+c3s-verify-*.out
 slurm-*.out
 
 # macOS

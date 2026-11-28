@@ -62,12 +62,20 @@ Verify the new pool and switch consumers before separately retiring the old pool
 
 ## Check completion and verify
 
+Submit verification on a compute node, independently for each collection:
+
 ```sh
+sbatch --account=ACCOUNT scripts/levante-verify.sbatch c3s-cmip6
+sbatch --account=ACCOUNT scripts/levante-verify.sbatch c3s-cmip6-decadal
+tail -F logs/c3s-cmip6-verify-batch-JOB_ID.log
 sacct -j JOB_ID --format=JobID,State,ExitCode,Elapsed
-.conda-env/bin/c3s-data-pool verify --config config/dkrz.toml \
-  --collection c3s-cmip6 --collection c3s-cmip6-decadal \
-  --log-file logs/c3s-verify.log
 ```
+
+The [verify script](../scripts/levante-verify.sbatch) requests one CPU for four
+hours and uses `--batch`. It accepts the same collection, `--config` and console
+options as the build scripts, but no `--apply` or `--dry-run`. Logs are named
+`logs/COLLECTION-verify-batch-JOB_ID.log`; Slurm output is `c3s-verify-JOB_ID.out`.
+Require `COMPLETED`, exit `0:0`, and a summary with all entries verified and no errors.
 
 Keep original data until the builds and verification succeed. Verify checks
 file types and sizes, not checksums. After a failed or timed-out job, resolve
