@@ -37,11 +37,10 @@ def relative_path(value):
     return Path(*path.parts)
 
 
-def catalog_reader(stream):
+def catalog_reader(stream, required=("path", "size", "mip_era")):
     reader = csv.DictReader(stream, strict=True)
-    required = {"path", "size", "mip_era"}
-    if not reader.fieldnames or not required.issubset(reader.fieldnames):
-        raise ValueError("catalog requires path, size and mip_era columns")
+    if not reader.fieldnames or not set(required).issubset(reader.fieldnames):
+        raise ValueError(f"catalog requires {', '.join(required)} columns")
     if len(set(reader.fieldnames)) != len(reader.fieldnames):
         raise ValueError("catalog has duplicate column names")
     return reader
@@ -56,12 +55,12 @@ def catalog_entry(row):
     return relative, int(row["size"])
 
 
-def count_catalog_files(name, stream, *, dataset_files=None):
+def count_catalog_files(name, stream, *, dataset_files=None, required=("path", "size", "mip_era")):
     """Count CSV records, including quoted multiline records, without file checks."""
     LOG.info("%s: counting catalog files", name)
     count = 0
     last_report = time.monotonic()
-    for count, row in enumerate(catalog_reader(stream), start=1):
+    for count, row in enumerate(catalog_reader(stream, required), start=1):
         if dataset_files is not None:
             try:
                 relative, _ = catalog_entry(row)

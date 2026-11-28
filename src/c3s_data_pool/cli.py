@@ -1,4 +1,4 @@
-"""Build and verify local data pools from CSV catalogs."""
+"""Build and verify local data pools, and update existing CSV catalogs."""
 
 import argparse
 import logging
@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .catalog import process_catalog
+from .catalog_update import update_catalog
 from .config import load_config
 from .output import RunOutput
 from .stats import Stats
@@ -36,15 +37,26 @@ def confirm_apply(collections, method="hardlink"):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("build", "verify"):
+    for command in ("build", "verify", "update-catalog"):
         sub = commands.add_parser(command)
-        sub.add_argument("--config", required=True, type=Path)
+        if command == "update-catalog":
+            sub.add_argument("--catalog", required=True, help="existing local or HTTPS CSV catalog")
+            sub.add_argument("--source", required=True, type=Path, help="source data pool root")
+            sub.add_argument(
+                "--output", required=True, type=Path, help="new .csv or .csv.gz catalog"
+            )
+            sub.add_argument("--mip-era", required=True, help="value to set in every output row")
+        else:
+            sub.add_argument("--config", required=True, type=Path)
         sub.add_argument(
             "--log-file",
             type=Path,
             help="detailed log file (default: ~/.local/state/c3s-data-pool/logs, respecting XDG_STATE_HOME)",
         )
-        sub.add_argument("--collection", action="append", help="select a collection (repeatable)")
+        if command != "update-catalog":
+            sub.add_argument(
+                "--collection", action="append", help="select a collection (repeatable)"
+            )
         verbosity = sub.add_mutually_exclusive_group()
         verbosity.add_argument(
             "--progress", action="store_true", help="show a progress bar on an interactive terminal"
@@ -62,7 +74,7 @@ def main(argv=None):
         sub.add_argument(
             "--batch",
             action="store_true",
-            help="skip confirmation and default to silent; --apply is still required to write data",
+            help="run unattended and default to silent; builds still require --apply to write data",
         )
         sub.add_argument("--progress-every", type=positive_int, default=10000, metavar="ROWS")
         sub.add_argument(
@@ -107,6 +119,21 @@ def main(argv=None):
             )
             mode.add_argument("--dry-run", action="store_true", help="inspect only (default)")
     args = parser.parse_args(argv)
+    if args.command == "update-catalog" and args.log_file is not None:
+        log_path = args.log_file.expanduser()
+        protected = [args.output]
+        if not args.catalog.startswith("https://"):
+            protected.append(Path(args.catalog))
+        try:
+            for path in protected:
+                if log_path.resolve() == path.expanduser().resolve() or (
+                    log_path.exists()
+                    and path.expanduser().exists()
+                    and log_path.samefile(path.expanduser())
+                ):
+                    parser.error("log file must differ from the input and output catalogs")
+        except (OSError, RuntimeError) as exc:
+            parser.error(str(exc))
     verbose = args.verbose or (not args.batch and not args.silent and not args.progress)
     try:
         output = RunOutput(
@@ -115,18 +142,38 @@ def main(argv=None):
     except OSError as exc:
         print(f"Cannot open log file: {exc}", file=sys.stderr)
         return 2
-    mode = "Verify" if args.command == "verify" else ("Apply" if args.apply else "Dry-run")
+    mode = (
+        "Update catalog"
+        if args.command == "update-catalog"
+        else ("Verify" if args.command == "verify" else ("Apply" if args.apply else "Dry-run"))
+    )
     with output:
         try:
             code = _run(args, output.console)
         except KeyboardInterrupt:
-            LOG.error("interrupted; completed files are retained, rerun to resume")
+            if args.command == "update-catalog":
+                LOG.error("catalog update interrupted; input is unchanged, rerun to retry")
+            else:
+                LOG.error("interrupted; completed files are retained, rerun to resume")
             code = 130
         output.finish(code, mode)
     return code
 
 
 def _run(args, console):
+    if args.command == "update-catalog":
+        stats = update_catalog(
+            args.catalog,
+            args.source,
+            args.output,
+            args.mip_era,
+            progress_every=args.progress_every,
+            cache_dir=args.cache_dir,
+            refresh=args.refresh_catalog,
+            heartbeat_seconds=args.heartbeat_seconds,
+            console=console,
+        )
+        return 1 if stats.failed else 0
     build = args.command == "build"
     apply = build and args.apply
     dry_run = build and not apply
