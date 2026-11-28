@@ -47,12 +47,29 @@ def catalog_reader(stream):
     return reader
 
 
-def count_catalog_files(name, stream):
+def catalog_entry(row):
+    if None in row or any(value is None for value in row.values()):
+        raise ValueError("row does not match catalog header")
+    relative = relative_path(row["path"])
+    if not row["size"].isascii() or not row["size"].isdigit():
+        raise ValueError("size must be a non-negative integer in bytes")
+    return relative, int(row["size"])
+
+
+def count_catalog_files(name, stream, *, dataset_files=None):
     """Count CSV records, including quoted multiline records, without file checks."""
     LOG.info("%s: counting catalog files", name)
     count = 0
     last_report = time.monotonic()
-    for count, _ in enumerate(catalog_reader(stream), start=1):
+    for count, row in enumerate(catalog_reader(stream), start=1):
+        if dataset_files is not None:
+            try:
+                relative, _ = catalog_entry(row)
+            except ValueError:
+                pass  # Invalid entries are reported during the processing pass.
+            else:
+                directory = relative.parent
+                dataset_files[directory] = dataset_files.get(directory, 0) + 1
         now = time.monotonic()
         if now - last_report >= 30:
             LOG.info("%s: counted %d catalog files so far", name, count)
@@ -79,6 +96,8 @@ def process_catalog(
     dry_run = build and not apply
     stats = Stats()
     dataset_directories = set()
+    dataset_files = {}
+    dataset_processed = {}
     metadata = MetadataCache()
     with Heartbeat(name, interval=heartbeat_seconds, console=console) as heartbeat:
         try:
@@ -86,7 +105,8 @@ def process_catalog(
             location = cache_catalog(paths["catalog"], cache_dir, refresh=refresh)
             heartbeat.update("counting catalog", location)
             with open_catalog(location) as stream:
-                stats.total_files = count_catalog_files(name, stream)
+                stats.total_files = count_catalog_files(name, stream, dataset_files=dataset_files)
+                LOG.info("%s: catalog contains %d dataset directories", name, len(dataset_files))
                 stats.report(name, "progress")
                 heartbeat.update("reading catalog", completed=0, total=stats.total_files)
                 stream.seek(0)
@@ -98,19 +118,24 @@ def process_catalog(
                         )
                     stats.files += 1
                     try:
-                        if None in row or any(value is None for value in row.values()):
-                            raise ValueError("row does not match catalog header")
-                        relative = relative_path(row["path"])
-                        if not row["size"].isascii() or not row["size"].isdigit():
-                            raise ValueError("size must be a non-negative integer in bytes")
-                        size = int(row["size"])
+                        relative, size = catalog_entry(row)
                     except ValueError as exc:
+                        heartbeat.set_dataset()
                         stats.invalid += 1
                         LOG.error("%s row %d: invalid catalog entry: %s", name, stats.files, exc)
                     else:
                         dataset_directories.add(relative.parent)
                         stats.datasets = len(dataset_directories)
                         stats.logical_bytes += size
+                        processed = dataset_processed.get(relative.parent, 0)
+                        heartbeat.set_dataset(
+                            relative.parent,
+                            completed=processed,
+                            total=dataset_files[relative.parent],
+                            seen=stats.datasets,
+                            total_datasets=len(dataset_files),
+                            filename=relative.name,
+                        )
                         try:
                             heartbeat.update(
                                 "checking source" if build else "checking destination",
@@ -135,6 +160,15 @@ def process_catalog(
                         except (OSError, RuntimeError) as exc:
                             stats.errors += 1
                             LOG.error("%s row %d (%s): %s", name, stats.files, relative, exc)
+                        dataset_processed[relative.parent] = processed + 1
+                        heartbeat.set_dataset(
+                            relative.parent,
+                            completed=processed + 1,
+                            total=dataset_files[relative.parent],
+                            seen=stats.datasets,
+                            total_datasets=len(dataset_files),
+                            filename=relative.name,
+                        )
                     heartbeat.update(
                         "reading catalog", completed=stats.files, total=stats.total_files
                     )

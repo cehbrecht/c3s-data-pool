@@ -72,8 +72,8 @@ def test_both_passes_use_same_open_snapshot(tmp_path, monkeypatch, replacement):
     catalog.write_text("path,size,mip_era\na.nc,1,test\n")
     original_count = catalog_module.count_catalog_files
 
-    def count_and_replace(name, stream):
-        count = original_count(name, stream)
+    def count_and_replace(name, stream, **kwargs):
+        count = original_count(name, stream, **kwargs)
         fresh = tmp_path / "replacement.csv"
         fresh.write_text("path,size,mip_era\n" + replacement)
         fresh.replace(catalog)

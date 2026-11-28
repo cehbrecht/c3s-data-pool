@@ -98,7 +98,7 @@ def test_batch_preserves_failed_cli_exit_status(batch_env, method):
     assert result.returncode == 1
 
 
-@pytest.mark.parametrize("method", ["copy", "hardlink"])
+@pytest.mark.parametrize("method", ["copy", "hardlink", "verify"])
 @pytest.mark.parametrize("console", ["--verbose", "--silent", "--progress"])
 def test_batch_passes_console_option_to_cli(batch_env, method, console):
     result = subprocess.run(
@@ -110,3 +110,52 @@ def test_batch_passes_console_option_to_cli(batch_env, method, console):
     )
     assert result.returncode == 0, result.stderr
     assert console in result.stdout.splitlines()
+
+
+@pytest.mark.parametrize("custom", [False, True])
+def test_verify_batch_command_and_log(batch_env, custom):
+    args = ["c3s-cmip6-decadal", "--config", "config/custom pool.toml"] if custom else []
+    result = subprocess.run(
+        ["bash", str(SCRIPTS / "levante-verify.sbatch"), *args],
+        env=batch_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    collection = "c3s-cmip6-decadal" if custom else "c3s-cmip6"
+    config = "config/custom pool.toml" if custom else "config/dkrz.toml"
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "verify",
+        "--config",
+        config,
+        "--collection",
+        collection,
+        "--batch",
+        "--log-file",
+        f"logs/{collection}-verify-batch-12345.log",
+    ]
+
+
+@pytest.mark.parametrize("flag", ["--apply", "--dry-run"])
+def test_verify_batch_rejects_build_modes(batch_env, flag):
+    result = subprocess.run(
+        ["bash", str(SCRIPTS / "levante-verify.sbatch"), flag],
+        env=batch_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "Usage:" in result.stderr
+    assert result.stdout == ""
+
+
+def test_verify_batch_preserves_failure_exit_status(batch_env):
+    result = subprocess.run(
+        ["bash", str(SCRIPTS / "levante-verify.sbatch")],
+        env={**batch_env, "MOCK_EXIT": "1"},
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 1
