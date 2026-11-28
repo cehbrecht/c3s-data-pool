@@ -13,7 +13,7 @@ catalog_url="https://raw.githubusercontent.com/cp4cds/c3s_34g_manifests/refs/hea
 .conda-env/bin/c3s-data-pool update-catalog \
   --catalog "$catalog_url" \
   --source /work/ik1017/C3SCMIP5/data/c3s-cmip5 \
-  --output catalogs/c3s-cmip5_updated.csv.gz \
+  --output catalogs/c3s-cmip5_v20240711_v2.csv.gz \
   --mip-era CMIP5 \
   --log-file logs/cmip5-catalog-update.log \
   --progress
@@ -51,11 +51,21 @@ the new catalog; this command has no dry-run or `--apply` mode.
 From the repository root, with an existing local input catalog:
 
 ```sh
-sbatch --account=ACCOUNT --partition=shared --cpus-per-task=1 \
-  --time=1-00:00:00 --job-name=c3s-catalog-update \
-  --output=c3s-catalog-update-%j.out \
-  --wrap='.conda-env/bin/c3s-data-pool update-catalog --catalog catalogs/c3s-cmip5_v20240711.csv.gz --source /work/ik1017/C3SCMIP5/data/c3s-cmip5 --output catalogs/c3s-cmip5_updated.csv.gz --mip-era CMIP5 --batch --log-file logs/cmip5-catalog-update.log'
+sbatch --account=ACCOUNT scripts/levante-update-catalog.sbatch c3s-cmip5 \
+  --catalog catalogs/c3s-cmip5_v20240711.csv.gz \
+  --source /work/ik1017/C3SCMIP5/data/c3s-cmip5 \
+  --output catalogs/c3s-cmip5_v20240711_v2.csv.gz \
+  --mip-era CMIP5
+
+tail -F logs/c3s-cmip5-catalog-update-batch-JOB_ID.log
 ```
+
+The [batch script](../scripts/levante-update-catalog.sbatch) requests one CPU for
+24 hours. The collection argument labels the log; the remaining arguments are
+passed to `update-catalog`. It uses `--batch` (silent by default); append
+`--verbose` to also print logs to Slurm output. No `--apply` is required or accepted.
+Slurm output is `c3s-catalog-update-JOB_ID.out`; detailed logs are
+`logs/COLLECTION-catalog-update-batch-JOB_ID.log`. No tmux is needed.
 
 Replace `ACCOUNT` with an authorized Slurm allocation account. You can use the
 HTTPS catalog URL as `--catalog` instead. Keep the completed output as a reviewed

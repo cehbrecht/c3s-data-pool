@@ -42,7 +42,7 @@ the existing paths, row order and other columns:
 c3s-data-pool update-catalog \
   --catalog c3s-cmip5_v20240711.csv.gz \
   --source /work/ik1017/C3SCMIP5/data/c3s-cmip5 \
-  --output catalogs/c3s-cmip5_updated.csv.gz \
+  --output catalogs/c3s-cmip5_v20240711_v2.csv.gz \
   --mip-era CMIP5 --progress
 ```
 
