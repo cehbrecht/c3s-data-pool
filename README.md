@@ -33,6 +33,23 @@ Check versions in the [main Intake catalog](https://raw.githubusercontent.com/cp
 For migrations, use fixed local snapshots or URLs pinned to a Git commit.
 Remote catalogs are cached locally and streamed row by row.
 
+## Update an existing catalog
+
+Add or refresh `size` from actual source-file metadata and set `mip_era`, preserving
+the existing paths, row order and other columns:
+
+```sh
+c3s-data-pool update-catalog \
+  --catalog c3s-cmip5_v20240711.csv.gz \
+  --source /work/ik1017/C3SCMIP5/data/c3s-cmip5 \
+  --output catalogs/c3s-cmip5_v20240711_v2.csv.gz \
+  --mip-era CMIP5 --progress
+```
+
+The input can also be an HTTPS `.csv.gz` URL. A new output path is required;
+the input is never modified. No output is published if any file or row fails.
+See [catalog update details](docs/catalog-update.md), including running on Slurm.
+
 ## Build and verify
 
 ```sh

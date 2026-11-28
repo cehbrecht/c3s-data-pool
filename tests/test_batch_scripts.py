@@ -159,3 +159,49 @@ def test_verify_batch_preserves_failure_exit_status(batch_env):
         check=False,
     )
     assert result.returncode == 1
+
+
+@pytest.mark.parametrize("exit_code", [0, 1, 2])
+@pytest.mark.parametrize("remote", [False, True])
+def test_catalog_update_batch_forwards_options_and_exit_status(batch_env, exit_code, remote):
+    catalog = "https://example.test/catalog.csv.gz" if remote else "catalogs/input file.csv.gz"
+    options = [
+        "--catalog",
+        catalog,
+        "--source",
+        "/work/ik1017/C3SCMIP5/data/c3s-cmip5",
+        "--output",
+        "catalogs/c3s-cmip5_v20240711_v2.csv.gz",
+        "--mip-era",
+        "CMIP5",
+        "--verbose",
+    ]
+    result = subprocess.run(
+        ["bash", str(SCRIPTS / "levante-update-catalog.sbatch"), "c3s-cmip5", *options],
+        env={**batch_env, "MOCK_EXIT": str(exit_code)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == exit_code, result.stderr
+    assert result.stdout.splitlines() == [
+        "update-catalog",
+        *options,
+        "--batch",
+        "--log-file",
+        "logs/c3s-cmip5-catalog-update-batch-12345.log",
+    ]
+
+
+@pytest.mark.parametrize("args", [[], ["--catalog"], ["../escape"], [""]])
+def test_catalog_update_batch_requires_safe_collection_label(batch_env, args):
+    result = subprocess.run(
+        ["bash", str(SCRIPTS / "levante-update-catalog.sbatch"), *args],
+        env=batch_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "Usage:" in result.stderr
+    assert result.stdout == ""

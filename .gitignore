@@ -29,6 +29,7 @@ logs/
 c3s-copy-*.out
 c3s-hardlink-*.out
 c3s-verify-*.out
+c3s-catalog-update-*.out
 slurm-*.out
 
 # macOS
